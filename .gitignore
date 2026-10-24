@@ -1,0 +1,14 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+# App bundle output
+build/
+
+# Icon working files (only Resources/AppIcon.png is shipped)
+Resources/AppIcon-*
+
+.DS_Store

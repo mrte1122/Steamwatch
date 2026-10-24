@@ -1,0 +1,229 @@
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
+public enum SteamError: Error, LocalizedError, Equatable {
+    case http(Int)
+    case rateLimited
+    case badAPIKey
+    case missingAPIKey
+    case privateProfile
+    case vanityNotFound
+    case decoding(String)
+    case transport(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .http(let code): return "Steam returned HTTP \(code)."
+        case .rateLimited: return "Steam's rate limit was hit; try again in a few minutes."
+        case .badAPIKey: return "Steam rejected the API key."
+        case .missingAPIKey: return "This needs a Steam Web API key."
+        case .privateProfile: return "The profile or its game details are private."
+        case .vanityNotFound: return "No Steam profile has that custom URL."
+        case .decoding(let m): return "Unexpected response from Steam (\(m))."
+        case .transport(let m): return m
+        }
+    }
+}
+
+/// Swappable network layer so the client is testable and portable (URLSession on every platform
+/// Swift supports; a Windows port could hand it WinHTTP instead).
+public protocol HTTPTransport: Sendable {
+    func get(_ url: URL) async throws -> (Data, Int)
+}
+
+public struct URLSessionTransport: HTTPTransport {
+    public init() {}
+    public func get(_ url: URL) async throws -> (Data, Int) {
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 20
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("Steamwatch/\(SteamClient.version) (menu bar wishlist watcher)", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            return (data, (resp as? HTTPURLResponse)?.statusCode ?? -1)
+        } catch {
+            throw SteamError.transport(error.localizedDescription)
+        }
+    }
+}
+
+/// Thin client over the three Steam surfaces the app uses:
+///  - IWishlistService and IStoreBrowseService (no key; public profiles only)
+///  - IPlayerService / ISteamUser (need the user's Web API key)
+public struct SteamClient: Sendable {
+    public static let version = "0.1.0"
+    public static let api = URL(string: "https://api.steampowered.com")!
+    public static let assetBase = "https://shared.akamai.steamstatic.com/store_item_assets/"
+
+    public var transport: HTTPTransport
+    public var apiKey: String?
+    public var countryCode: String
+    public var language: String
+
+    public init(transport: HTTPTransport = URLSessionTransport(), apiKey: String? = nil,
+                countryCode: String = "US", language: String = "english") {
+        self.transport = transport; self.apiKey = apiKey; self.countryCode = countryCode; self.language = language
+    }
+
+    // MARK: Wishlist and store (no key)
+
+    /// Empty for a private wishlist too: Steam answers `{"response":{}}` either way.
+    public func wishlist(steamID: String) async throws -> [WishlistEntry] {
+        struct R: Decodable { struct Item: Decodable { let appid: Int; let priority: Int?; let date_added: Double? }
+                              struct Resp: Decodable { let items: [Item]? }; let response: Resp }
+        let r: R = try await get("IWishlistService/GetWishlist/v1/", [("steamid", steamID)], keyed: false)
+        return (r.response.items ?? []).map {
+            WishlistEntry(appID: $0.appid, priority: $0.priority ?? 0, added: Date(timeIntervalSince1970: $0.date_added ?? 0))
+        }
+    }
+
+    /// Names, capsule art and the best current price for many apps at once (50 per request).
+    public func storeItems(_ ids: [AppID]) async throws -> [StoreItem] {
+        var out: [StoreItem] = []
+        for chunk in stride(from: 0, to: ids.count, by: 50).map({ Array(ids[$0..<min($0 + 50, ids.count)]) }) {
+            let input: [String: Any] = [
+                "ids": chunk.map { ["appid": $0] },
+                "context": ["language": language, "country_code": countryCode],
+                "data_request": ["include_assets": true, "include_release": true],
+            ]
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
+            let r: GetItemsResponse = try await get("IStoreBrowseService/GetItems/v1/", [("input_json", json)], keyed: false)
+            out += (r.response.store_items ?? []).compactMap { StoreItem(wire: $0) }
+        }
+        return out
+    }
+
+    // MARK: Player (key required)
+
+    public func resolveVanity(_ name: String) async throws -> String {
+        struct R: Decodable { struct Resp: Decodable { let success: Int; let steamid: String? }; let response: Resp }
+        let r: R = try await get("ISteamUser/ResolveVanityURL/v1/", [("vanityurl", name)], keyed: true)
+        guard r.response.success == 1, let id = r.response.steamid else { throw SteamError.vanityNotFound }
+        return id
+    }
+
+    public func resolve(_ ref: SteamProfileRef) async throws -> String {
+        switch ref {
+        case .id64(let id): return id
+        case .vanity(let name): return try await resolveVanity(name)
+        }
+    }
+
+    public func recentlyPlayed(steamID: String) async throws -> [RecentGame] {
+        struct R: Decodable {
+            struct Game: Decodable { let appid: Int; let name: String?; let playtime_2weeks: Int?; let playtime_forever: Int?; let img_icon_url: String? }
+            struct Resp: Decodable { let games: [Game]? }
+            let response: Resp
+        }
+        let r: R = try await get("IPlayerService/GetRecentlyPlayedGames/v1/", [("steamid", steamID)], keyed: true)
+        return (r.response.games ?? []).map { g in
+            let icon = g.img_icon_url.flatMap { $0.isEmpty ? nil : URL(string: "https://media.steampowered.com/steamcommunity/public/images/apps/\(g.appid)/\($0).jpg") }
+            return RecentGame(appID: g.appid, name: g.name ?? "App \(g.appid)", minutesTwoWeeks: g.playtime_2weeks ?? 0,
+                              minutesForever: g.playtime_forever ?? 0, iconURL: icon)
+        }
+    }
+
+    public func playerSummaries(_ ids: [String]) async throws -> [PlayerSummary] {
+        struct R: Decodable {
+            struct P: Decodable { let steamid: String; let personaname: String; let avatarmedium: String?
+                                  let personastate: Int?; let gameextrainfo: String?; let gameid: String? }
+            struct Resp: Decodable { let players: [P] }
+            let response: Resp
+        }
+        var out: [PlayerSummary] = []
+        for chunk in stride(from: 0, to: ids.count, by: 100).map({ Array(ids[$0..<min($0 + 100, ids.count)]) }) {
+            let r: R = try await get("ISteamUser/GetPlayerSummaries/v2/", [("steamids", chunk.joined(separator: ","))], keyed: true)
+            out += r.response.players.map {
+                PlayerSummary(steamID: $0.steamid, name: $0.personaname, avatarURL: $0.avatarmedium.flatMap(URL.init(string:)),
+                              isOnline: ($0.personastate ?? 0) != 0, currentGame: $0.gameextrainfo, currentGameID: $0.gameid.flatMap(Int.init))
+            }
+        }
+        return out
+    }
+
+    public func friendIDs(steamID: String) async throws -> [String] {
+        struct R: Decodable { struct F: Decodable { let steamid: String }
+                              struct L: Decodable { let friends: [F] }
+                              struct Resp: Decodable { let friendslist: L? }; let friendslist: L? }
+        // Steam wraps this one differently from the IPlayerService calls: {"friendslist":{"friends":[…]}}.
+        let r: R = try await get("ISteamUser/GetFriendList/v1/", [("steamid", steamID), ("relationship", "friend")], keyed: true)
+        return (r.friendslist?.friends ?? []).map(\.steamid)
+    }
+
+    // MARK: Plumbing
+
+    private func get<T: Decodable>(_ path: String, _ query: [(String, String)], keyed: Bool) async throws -> T {
+        var items = query.map { URLQueryItem(name: $0.0, value: $0.1) }
+        if keyed {
+            guard let apiKey, !apiKey.isEmpty else { throw SteamError.missingAPIKey }
+            items.append(URLQueryItem(name: "key", value: apiKey))
+        }
+        items.append(URLQueryItem(name: "format", value: "json"))
+        var comps = URLComponents(url: Self.api.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        comps.queryItems = items
+        let (data, status) = try await transport.get(comps.url!)
+        switch status {
+        case 200..<300: break
+        case 401 where keyed, 403 where keyed: throw SteamError.badAPIKey
+        case 401, 403: throw SteamError.privateProfile
+        case 429: throw SteamError.rateLimited
+        default: throw SteamError.http(status)
+        }
+        do { return try JSONDecoder().decode(T.self, from: data) }
+        catch { throw SteamError.decoding(String(describing: error).prefix(120).description) }
+    }
+}
+
+// MARK: - GetItems wire format
+
+/// Steam sends prices as strings ("2999") in this service, and ints elsewhere.
+struct IntOrString: Decodable {
+    let value: Int
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let i = try? c.decode(Int.self) { value = i; return }
+        if let s = try? c.decode(String.self), let i = Int(s) { value = i; return }
+        throw DecodingError.dataCorruptedError(in: c, debugDescription: "not an int")
+    }
+}
+
+struct GetItemsResponse: Decodable {
+    struct Item: Decodable {
+        struct Assets: Decodable { let asset_url_format: String?; let small_capsule: String?; let header: String? }
+        struct Discount: Decodable { let discount_end_date: Double?; let discount_description: String? }
+        struct Offer: Decodable {
+            let final_price_in_cents: IntOrString?
+            let original_price_in_cents: IntOrString?
+            let discount_pct: Int?
+            let active_discounts: [Discount]?
+        }
+        let id: Int
+        let success: Int?
+        let name: String?
+        let is_free: Bool?
+        let assets: Assets?
+        let best_purchase_option: Offer?
+    }
+    struct Resp: Decodable { let store_items: [Item]? }
+    let response: Resp
+}
+
+extension StoreItem {
+    init?(wire: GetItemsResponse.Item, currency: String = "USD") {
+        guard wire.success == 1, let name = wire.name else { return nil }
+        var capsule: URL?
+        if let a = wire.assets, let fmt = a.asset_url_format, let file = a.small_capsule ?? a.header {
+            capsule = URL(string: SteamClient.assetBase + fmt.replacingOccurrences(of: "${FILENAME}", with: file))
+        }
+        var price: Price?
+        if let o = wire.best_purchase_option, let final = o.final_price_in_cents?.value {
+            let original = o.original_price_in_cents?.value ?? final
+            let ends = o.active_discounts?.compactMap(\.discount_end_date).max().map { Date(timeIntervalSince1970: $0) }
+            price = Price(currency: currency, finalCents: final, originalCents: max(original, final),
+                          discountPercent: o.discount_pct ?? 0, saleEnds: ends)
+        }
+        self.init(appID: wire.id, name: name, capsuleURL: capsule, price: price, isFree: wire.is_free ?? false)
+    }
+}

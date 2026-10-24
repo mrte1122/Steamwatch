@@ -1,0 +1,46 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Build-check only: no secrets. Releases are signed and notarized locally.
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Toolchain
+        run: swift --version
+      - name: Core tests
+        run: swift test
+      - name: Build the universal app (ad-hoc signed)
+        run: ./scripts/build-app.sh
+      - name: Self-tests
+        run: build/Steamwatch.app/Contents/MacOS/Steamwatch --selftest
+      - name: Still runs on macOS 14
+        run: |
+          for arch in arm64 x86_64; do
+            vtool -arch "$arch" -show-build build/Steamwatch.app/Contents/MacOS/Steamwatch | grep -q "minos 14.0" \
+              || { echo "::error::$arch slice requires a newer macOS than 14.0"; exit 1; }
+          done
+
+  # Proves the core stays free of Apple-only APIs, which is what the Windows port depends on.
+  core-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Core tests on Linux
+        run: swift test
