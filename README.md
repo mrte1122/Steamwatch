@@ -8,9 +8,24 @@ set.
 
 ![Popover](docs/popover-light.png)
 
+## Install
+
+**[Download Steamwatch for macOS](https://github.com/mrte1122/Steamwatch/releases/latest/download/Steamwatch.zip)**
+(macOS 14 or later, Apple silicon and Intel). Unzip it, drag **Steamwatch.app** into **Applications**, then open it.
+It's signed and notarized, and updates itself.
+
+Or with [Homebrew](https://brew.sh):
+
+```bash
+brew trust mrte1122/tap
+brew install --cask mrte1122/tap/steamwatch
+```
+
+Recent Homebrew versions only load casks from third-party taps you've trusted, hence the first line; you only need it once.
+
 ## Setup
 
-1. Build and install (see below) or download a release, then launch Steamwatch.
+1. Launch Steamwatch; Settings opens on first run.
 2. In Settings, paste your Steam profile URL (`https://steamcommunity.com/profiles/7656…` or
    `https://steamcommunity.com/id/yourname`) and click Connect.
 3. Your wishlist must be public: on Steam, Profile → Edit Profile → Privacy Settings → set
