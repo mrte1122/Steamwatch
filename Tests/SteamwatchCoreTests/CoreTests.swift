@@ -1,7 +1,13 @@
 import XCTest
 @testable import SteamwatchCore
 
+/// Prices format with the locale's currency symbol; pin en_US so assertions hold everywhere.
+private let pinLocale: Void = { Format.locale = Locale(identifier: "en_US") }()
+
+
 final class SteamIDTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     func testParsesEveryInputShape() {
         XCTAssertEqual(SteamProfileRef(parsing: "76561197960287930"), .id64("76561197960287930"))
         XCTAssertEqual(SteamProfileRef(parsing: " https://steamcommunity.com/profiles/76561197960287930/ "), .id64("76561197960287930"))
@@ -15,6 +21,8 @@ final class SteamIDTests: XCTestCase {
 }
 
 final class DealEngineTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     func testDemoDealsRankTargetThenLowThenFirstSale() {
         let deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history, targets: DemoData.targets.byAppID)
         XCTAssertEqual(deals.count, 7, "only discounted wishlist games are deals")
@@ -80,6 +88,8 @@ final class DealEngineTests: XCTestCase {
 }
 
 final class DealSortTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     let deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history, targets: DemoData.targets.byAppID)
 
     func testSorts() {
@@ -112,6 +122,8 @@ final class DealSortTests: XCTestCase {
 }
 
 final class PriceHistoryTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     func testObserveTracksLowsAndReturnsPriorRecord() {
         var h = PriceHistory()
         let t0 = Date(timeIntervalSince1970: 1_000_000)
@@ -160,6 +172,8 @@ final class PriceHistoryTests: XCTestCase {
 }
 
 final class PlaytimeTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     func testDailyBucketsCountOnlyIncreases() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
@@ -192,6 +206,8 @@ final class PlaytimeTests: XCTestCase {
 }
 
 final class FormatTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     func testPriceHoursAndParsing() {
         XCTAssertEqual(Format.price(1199, currency: "USD"), "$11.99")
         XCTAssertEqual(Format.hours(45), "45m")
@@ -208,6 +224,8 @@ final class FormatTests: XCTestCase {
 }
 
 final class WireDecodingTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
     func testDecodesGetItemsWithStringPricesAndDiscounts() throws {
         let json = """
         {"response":{"store_items":[

@@ -1,9 +1,14 @@
 import Foundation
 
 public enum Format {
+    /// Locale for prices. The user's own by default; tests pin it, because the symbol depends on it
+    /// ("$11.99" in en_US, "US$11.99" in a bare POSIX locale such as a Linux CI container).
+    public static var locale: Locale = .current
+
     /// "$11.99", "€11,99"; falls back to "11.99 USD" where the locale can't format the currency.
     public static func price(_ cents: Int, currency: String) -> String {
         let f = NumberFormatter()
+        f.locale = locale
         f.numberStyle = .currency
         f.currencyCode = currency
         let amount = Double(cents) / 100
