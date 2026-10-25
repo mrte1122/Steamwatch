@@ -31,14 +31,14 @@ public enum DealEngine {
     /// Pair the wishlist with store data and history. `history` must be the state *before* this
     /// reading was observed, so lows and first sales are judged against the past.
     public static func deals(wishlist: [WishlistEntry], items: [StoreItem], history: PriceHistory,
-                             targets: [AppID: Int]) -> [Deal] {
-        let wanted = Set(wishlist.map(\.appID))
+                             targets: [AppID: Int], hidden: Set<AppID> = []) -> [Deal] {
+        let priorities = Dictionary(wishlist.map { ($0.appID, $0.priority) }, uniquingKeysWith: { a, _ in a })
         var deals: [Deal] = []
-        for item in items where wanted.contains(item.appID) {
+        for item in items where priorities[item.appID] != nil && !hidden.contains(item.appID) {
             guard let price = item.price, price.isOnSale else { continue }
             let past = history.record(item.appID)
             deals.append(Deal(item: item, price: price, lowestSeenCents: past?.lowestCents, targetCents: targets[item.appID],
-                              isFirstSale: past.map { !$0.seenOnSale } ?? false))
+                              isFirstSale: past.map { !$0.seenOnSale } ?? false, priority: priorities[item.appID] ?? 0))
         }
         return deals.sorted { a, b in
             a.rank != b.rank ? a.rank < b.rank : a.item.name.localizedCaseInsensitiveCompare(b.item.name) == .orderedAscending
@@ -76,5 +76,41 @@ public enum DealEngine {
 
     public static func keys(for deals: [Deal]) -> Set<String> {
         Set(deals.map { "\($0.item.appID)-\($0.price.finalCents)" })
+    }
+
+    /// Narrow a (sorted) deal list for the popover; order is preserved.
+    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "") -> [Deal] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return deals.filter { d in
+            guard filter.matches(d) else { return false }
+            return q.isEmpty || d.item.name.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+}
+
+/// The chip row above the deal list.
+public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
+    case all, targets, lows, halfOff, underTen
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .all: return "All"
+        case .targets: return "Targets"
+        case .lows: return "Lows"
+        case .halfOff: return "50%+"
+        case .underTen: return "Under 10"
+        }
+    }
+
+    public func matches(_ d: Deal) -> Bool {
+        switch self {
+        case .all: return true
+        case .targets: return d.targetCents != nil
+        case .lows: return d.isFirstSale || d.isNewLow
+        case .halfOff: return d.price.discountPercent >= 50
+        case .underTen: return d.price.finalCents < 1000
+        }
     }
 }

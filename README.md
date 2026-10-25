@@ -19,7 +19,11 @@ set.
    and friends online. Steam issues one to any account that has made a purchase. The key is stored in
    your Keychain and only ever sent to `api.steampowered.com`.
 
-Right-click any game in the dropdown to set a target price. Click a game to open its store page.
+Click a game to open its store page. Right-click it to set a target price (or "Set Target to
+$X" for the current sale price) or to hide it once you've bought it; hidden games stay out of the
+list until they leave your wishlist. Settings lists every target and hidden game. With more than
+a few deals the list gets a search field and filter chips (Targets, Lows, 50%+, Under 10) and
+scrolls past six rows.
 
 ## How the numbers work
 
@@ -28,6 +32,10 @@ Right-click any game in the dropdown to set a target price. Click a game to open
 - **Low seen / new low** compare against what Steamwatch itself has observed. Steam has no price
   history API, so the record starts the first time the app looks at a game.
 - **First sale ever** means every earlier reading of that game was at full price.
+- **Order**: target hits, then first sales, then new lows, then everything else by score. Score
+  is the discount percent plus a boost for games you ranked near the top of your wishlist (+60 for
+  #1, two less per rank, nothing past #30), so a −30% on a top-five game outranks a −90% on
+  something you added years ago. Rank your wishlist on Steam to steer it.
 - **Played this week** samples Steam's "last two weeks" counter on every refresh and attributes
   each increase to the day it was noticed, so the daily bars fill in while the app is running.
   Until there is a week of samples it also shows the raw two-week total.
@@ -64,7 +72,7 @@ docs/windows.md          what a Windows port needs
 ```
 
 Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
-`playtime.json`, `targets.json`, `cache.json`). Preferences are in
+`playtime.json`, `targets.json`, `hidden.json`, `cache.json`). Preferences are in
 `io.github.mrte1122.Steamwatch`.
 
 ## Steam API usage

@@ -24,9 +24,9 @@ enum Snapshot {
             }
             d.set(savedMode, forKey: SettingsKey.menuBarMode); d.set(savedMono, forKey: SettingsKey.monochrome)
 
-            let savedAll = d.object(forKey: SettingsKey.showAllDeals)
-            for (name, appearanceName, all) in [("light", NSAppearance.Name.aqua, false), ("dark", .darkAqua, false), ("all-light", .aqua, true)] {
-                d.set(all, forKey: SettingsKey.showAllDeals)
+            let savedFilter = d.object(forKey: SettingsKey.dealFilter)
+            for (name, appearanceName, filter) in [("light", NSAppearance.Name.aqua, "all"), ("dark", .darkAqua, "all"), ("targets-light", .aqua, "targets")] {
+                d.set(filter, forKey: SettingsKey.dealFilter)
                 let view = PopoverView(store: store, openSettings: {})
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -44,7 +44,7 @@ enum Snapshot {
                     try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("popover-\(name).png"))
                 }
             }
-            d.set(savedAll, forKey: SettingsKey.showAllDeals)
+            d.set(savedFilter, forKey: SettingsKey.dealFilter)
             print("Snapshots written to \(dir.path)")
             exit(0)
         }

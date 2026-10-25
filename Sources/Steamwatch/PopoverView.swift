@@ -6,12 +6,17 @@ struct PopoverView: View {
     @ObservedObject var store: Store
     var openSettings: () -> Void
 
-    @AppStorage(SettingsKey.showAllDeals) private var showAll = false
+    @AppStorage(SettingsKey.dealFilter) private var filterRaw = DealFilter.all.rawValue
     @AppStorage(SettingsKey.showPlaytime) private var showPlaytime = true
     @AppStorage(SettingsKey.showFriends) private var showFriends = true
+    @State private var query = ""
     @State private var editingTarget: AppID?
 
-    private let collapsedCount = 4
+    /// Rows visible before the list scrolls.
+    private let visibleRows = 6
+
+    private var filter: DealFilter { DealFilter(rawValue: filterRaw) ?? .all }
+    private var shown: [Deal] { DealEngine.filter(store.deals, filter, query: query) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -20,6 +25,7 @@ struct PopoverView: View {
                 SetupCard(openSettings: openSettings)
             } else {
                 errorBanner
+                if store.deals.count > visibleRows || !query.isEmpty || filter != .all { filterBar }
                 dealsSection
                 if showPlaytime { playtimeSection }
             }
@@ -51,8 +57,7 @@ struct PopoverView: View {
     }
 
     private var title: String {
-        if store.needsSetup { return "Steamwatch" }
-        if !store.hasData { return "Steamwatch" }
+        if store.needsSetup || !store.hasData { return "Steamwatch" }
         switch store.deals.count {
         case 0: return "Nothing on sale"
         case 1: return "1 wishlist game on sale"
@@ -65,6 +70,7 @@ struct PopoverView: View {
         var parts: [String] = []
         if let u = store.lastUpdated { parts.append("updated \(Format.relative(u, now: store.now))") }
         if store.wishlistCount > 0 { parts.append("\(store.wishlistCount) on wishlist") }
+        if store.hidden.count > 0 { parts.append("\(store.hidden.count) hidden") }
         return parts.isEmpty ? (store.isRefreshing ? "Checking the store…" : "Wishlist sale watcher") : parts.joined(separator: " · ")
     }
 
@@ -76,6 +82,41 @@ struct PopoverView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    // MARK: Filter bar
+
+    private var filterBar: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
+                TextField("Search deals", text: $query).textFieldStyle(.plain).font(.callout)
+                if !query.isEmpty {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                        .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .card()
+            HStack(spacing: 4) {
+                ForEach(DealFilter.allCases) { f in
+                    let count = DealEngine.filter(store.deals, f).count
+                    Button {
+                        filterRaw = f.rawValue
+                    } label: {
+                        Text(f == .all ? f.title : "\(f.title) \(count)")
+                            .font(.caption.weight(filter == f ? .semibold : .regular))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(filter == f ? Color(ns: Theme.accent).opacity(0.2) : Color.secondary.opacity(0.08),
+                                        in: Capsule())
+                            .foregroundStyle(filter == f ? Color(ns: Theme.readable(Theme.accent)) : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(count == 0 && f != .all)
+                }
+                Spacer()
+            }
         }
     }
 
@@ -91,22 +132,22 @@ struct PopoverView: View {
                 Text("None of your wishlist is discounted right now.").font(.callout).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity).padding(14).card()
+        } else if shown.isEmpty {
+            Text("No deals match.").font(.callout).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity).padding(14).card()
         } else {
-            VStack(spacing: 2) {
-                ForEach(showAll ? store.deals : Array(store.deals.prefix(collapsedCount))) { deal in
-                    DealRow(deal: deal, now: store.now, editing: editingTarget == deal.id,
-                            beginEdit: { editingTarget = deal.id },
-                            commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil })
-                }
-                if store.deals.count > collapsedCount {
-                    Button(showAll ? "Show fewer" : "Show \(store.deals.count - collapsedCount) more") { showAll.toggle() }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 2) {
+                    ForEach(shown) { deal in
+                        DealRow(deal: deal, now: store.now, editing: editingTarget == deal.id,
+                                beginEdit: { editingTarget = deal.id },
+                                commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil },
+                                hide: { store.hide(deal.id) })
+                    }
                 }
             }
+            .frame(maxHeight: CGFloat(visibleRows) * DealRow.height + CGFloat(visibleRows - 1) * 2)
+            .fixedSize(horizontal: false, vertical: shown.count <= visibleRows)
         }
     }
 
@@ -149,56 +190,72 @@ struct PopoverView: View {
 // MARK: - Rows and cards
 
 struct DealRow: View {
+    static let height: CGFloat = 50
+
     let deal: Deal
     let now: Date
     let editing: Bool
     let beginEdit: () -> Void
     let commit: (Int?) -> Void
+    let hide: () -> Void
     @State private var text = ""
     @Environment(\.openURL) private var openURL
 
+    private var accent: Color { Color(ns: Theme.readable(Theme.highlight)) }
+
     var body: some View {
         HStack(spacing: 10) {
-            Capsule(url: deal.item.capsuleURL)
+            CapsuleArt(url: deal.item.capsuleURL)
             VStack(alignment: .leading, spacing: 1) {
-                Text(deal.item.name).font(.callout.weight(.medium)).lineLimit(1)
-                    .foregroundStyle(deal.meetsTarget ? AnyShapeStyle(Color(ns: Theme.readable(Theme.highlight))) : AnyShapeStyle(.primary))
+                Text(deal.item.name).font(.callout.weight(.medium)).lineLimit(1).minimumScaleFactor(0.85)
+                    .foregroundStyle(deal.meetsTarget ? AnyShapeStyle(accent) : AnyShapeStyle(.primary))
                 if editing {
                     HStack(spacing: 4) {
-                        TextField("Target", text: $text, prompt: Text("e.g. 14.99"))
-                            .textFieldStyle(.roundedBorder).controlSize(.mini).frame(width: 70)
+                        TextField("Target", text: $text, prompt: Text("14.99"))
+                            .textFieldStyle(.roundedBorder).controlSize(.mini).frame(width: 64)
                             .onSubmit { commit(Format.cents(parsing: text)) }
                         Button("Set") { commit(Format.cents(parsing: text)) }.controlSize(.mini)
                         if deal.targetCents != nil { Button("Clear") { commit(nil) }.controlSize(.mini) }
                     }
                 } else {
-                    Text(detail).font(.caption).foregroundStyle(deal.meetsTarget ? AnyShapeStyle(Color(ns: Theme.readable(Theme.highlight))) : AnyShapeStyle(.secondary)).lineLimit(1)
+                    Text(detail).font(.caption).foregroundStyle(deal.meetsTarget ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary)).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("−\(deal.price.discountPercent)%")
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(deal.meetsTarget ? Color(ns: Theme.highlight) : Color(ns: Theme.highlight).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
-                    .foregroundStyle(deal.meetsTarget ? .white : Color(ns: Theme.readable(Theme.highlight)))
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Format.price(deal.price.originalCents, currency: deal.price.currency))
-                        .font(.caption2).strikethrough().foregroundStyle(.tertiary)
+            // Badge and final price side by side, original price beneath: keeps the column narrow
+            // so long names get the room.
+            VStack(alignment: .trailing, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text("−\(deal.price.discountPercent)%")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(deal.meetsTarget ? Color(ns: Theme.highlight) : Color(ns: Theme.highlight).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
+                        .foregroundStyle(deal.meetsTarget ? .white : accent)
                     Text(Format.price(deal.price.finalCents, currency: deal.price.currency)).font(.callout.weight(.medium)).monospacedDigit()
                 }
+                Text(Format.price(deal.price.originalCents, currency: deal.price.currency))
+                    .font(.caption2).strikethrough().foregroundStyle(.tertiary).monospacedDigit()
             }
+            .fixedSize()
         }
-        .padding(8)
+        .padding(.horizontal, 8)
+        .frame(height: Self.height)
         .card(tint: deal.meetsTarget ? Color(ns: Theme.highlight) : nil)
         .contentShape(Rectangle())
         .onTapGesture { if !editing { openURL(deal.item.storeURL) } }
         .contextMenu {
             Button("Open Store Page") { openURL(deal.item.storeURL) }
-            Button(deal.targetCents == nil ? "Set Target Price…" : "Change Target Price…") { text = deal.targetCents.map { String(format: "%.2f", Double($0) / 100) } ?? ""; beginEdit() }
+            Divider()
+            Button("Set Target to \(Format.price(deal.price.finalCents, currency: deal.price.currency))") { commit(deal.price.finalCents) }
+            Button(deal.targetCents == nil ? "Set Target Price…" : "Change Target Price…") {
+                text = deal.targetCents.map { String(format: "%.2f", Double($0) / 100) } ?? ""
+                beginEdit()
+            }
             if deal.targetCents != nil { Button("Clear Target") { commit(nil) } }
+            Divider()
+            Button("Hide (Bought It)") { hide() }
         }
-        .help("Click to open in the Steam store. Right-click to set a target price.")
+        .help("Click to open in the Steam store. Right-click for targets or to hide.")
     }
 
     private var detail: String {
@@ -208,14 +265,16 @@ struct DealRow: View {
         else if let t = deal.targetCents { parts.append("target \(Format.price(t, currency: cur))") }
         if deal.isFirstSale { parts.append("first sale ever") }
         else if deal.isNewLow { parts.append("new low") }
-        else if !deal.meetsTarget, let low = deal.lowestSeenCents { parts.append("low seen \(Format.price(low, currency: cur))") }
+        else if !deal.meetsTarget, let low = deal.lowestSeenCents, low < deal.price.finalCents { parts.append("low seen \(Format.price(low, currency: cur))") }
+        if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
         if let ends = deal.price.saleEnds { parts.append("ends \(Format.saleEnds(ends, now: now))") }
         return parts.joined(separator: " · ")
     }
 }
 
-/// 64×30 game art with a placeholder while it loads (or in demo mode without network).
-struct Capsule: View {
+/// 56×26 game art, loaded only when the row is on screen (LazyVStack), with a placeholder while it
+/// loads (or in demo mode without network).
+struct CapsuleArt: View {
     let url: URL?
     var body: some View {
         AsyncImage(url: Demo.isActive ? nil : url) { image in
@@ -224,7 +283,7 @@ struct Capsule: View {
             RoundedRectangle(cornerRadius: 4).fill(.quaternary)
                 .overlay(Image(systemName: "gamecontroller").font(.caption).foregroundStyle(.tertiary))
         }
-        .frame(width: 64, height: 30)
+        .frame(width: 56, height: 26)
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

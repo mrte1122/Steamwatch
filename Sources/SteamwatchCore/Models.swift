@@ -55,10 +55,12 @@ public struct Deal: Identifiable, Equatable, Sendable {
     public let targetCents: Int?
     /// True when no earlier reading ever showed this app discounted.
     public let isFirstSale: Bool
+    /// Wishlist rank as Steam stores it: 1 is the top of the user's ordering, 0 means unranked.
+    public let priority: Int
 
-    public init(item: StoreItem, price: Price, lowestSeenCents: Int?, targetCents: Int?, isFirstSale: Bool) {
+    public init(item: StoreItem, price: Price, lowestSeenCents: Int?, targetCents: Int?, isFirstSale: Bool, priority: Int = 0) {
         self.item = item; self.price = price; self.lowestSeenCents = lowestSeenCents
-        self.targetCents = targetCents; self.isFirstSale = isFirstSale
+        self.targetCents = targetCents; self.isFirstSale = isFirstSale; self.priority = priority
     }
 
     public var id: AppID { item.appID }
@@ -68,10 +70,17 @@ public struct Deal: Identifiable, Equatable, Sendable {
     public var isNewLow: Bool { lowestSeenCents.map { price.finalCents < $0 } ?? false }
 
     /// Lower sorts first: target hits, first sales (which are always new lows too, and the more
-    /// useful label), other new lows, then by discount.
+    /// useful label), other new lows, then by score.
     public var rank: (Int, Int) {
         let tier = meetsTarget ? 0 : isFirstSale ? 1 : isNewLow ? 2 : 3
-        return (tier, -price.discountPercent)
+        return (tier, -score)
+    }
+
+    /// Discount percent plus a boost for games the user ranked near the top of their wishlist:
+    /// +60 for #1, two points less per rank, nothing past #30. A −30% on a top-five game then
+    /// outranks a −90% on something added years ago and never ranked.
+    public var score: Int {
+        price.discountPercent + (priority > 0 ? max(0, 62 - 2 * priority) : 0)
     }
 }
 

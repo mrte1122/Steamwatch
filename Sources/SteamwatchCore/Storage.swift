@@ -48,6 +48,22 @@ public struct CachedState: Codable, Equatable, Sendable {
     }
 }
 
+/// Games the user marked "bought it" (or just doesn't want to see), keyed by appID as a string
+/// with the time they were hidden. Entries vanish once the game leaves the wishlist.
+public struct HiddenGames: Codable, Equatable, Sendable {
+    public var hiddenAt: [String: Date]
+    public init(hiddenAt: [String: Date] = [:]) { self.hiddenAt = hiddenAt }
+
+    public var appIDs: Set<AppID> { Set(hiddenAt.keys.compactMap(Int.init)) }
+    public var count: Int { hiddenAt.count }
+
+    public mutating func hide(_ appID: AppID, at now: Date = Date()) { hiddenAt[String(appID)] = now }
+    public mutating func unhide(_ appID: AppID) { hiddenAt[String(appID)] = nil }
+    public mutating func prune(keeping wishlist: Set<AppID>) {
+        hiddenAt = hiddenAt.filter { k, _ in Int(k).map(wishlist.contains) ?? false }
+    }
+}
+
 /// Target prices, keyed by appID as a string.
 public struct Targets: Codable, Equatable, Sendable {
     public var cents: [String: Int]

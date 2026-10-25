@@ -26,8 +26,30 @@ final class DealEngineTests: XCTestCase {
         XCTAssertFalse(deals[1].isNewLow, "equal to the previous low is not a new low")
         XCTAssertEqual(deals[2].item.name, "Satisfactory", "first sale comes before routine discounts")
         XCTAssertTrue(deals[2].isFirstSale)
-        XCTAssertEqual(deals[3...].map(\.item.name), ["Outer Wilds", "Brotato", "Dave the Diver", "Balatro"], "then by discount, then name")
-        XCTAssertFalse(deals[3].isNewLow, "an earlier, lower sale is on record")
+        XCTAssertEqual(deals[3...].map(\.item.name), ["Dave the Diver", "Balatro", "Outer Wilds", "Brotato"], "then by score: discount plus wishlist-rank boost")
+        XCTAssertEqual(deals[3].score, 88, "30% + 58 for rank #2")
+        XCTAssertEqual(deals[4].score, 80, "20% + 60 for rank #1")
+        XCTAssertFalse(deals[5].isNewLow, "an earlier, lower sale is on record")
+    }
+
+    func testHiddenGamesAndFilters() {
+        let hidden: Set<AppID> = [1030300]
+        let deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history,
+                                     targets: DemoData.targets.byAppID, hidden: hidden)
+        XCTAssertEqual(deals.count, 6)
+        XCTAssertEqual(deals.first?.item.name, "Hades II")
+        XCTAssertEqual(DealEngine.filter(deals, .targets).map(\.item.name), ["Hades II"])
+        XCTAssertEqual(DealEngine.filter(deals, .lows).map(\.item.name), ["Satisfactory"])
+        XCTAssertEqual(DealEngine.filter(deals, .halfOff).map(\.item.name), ["Outer Wilds"])
+        XCTAssertEqual(DealEngine.filter(deals, .underTen).map(\.item.name), ["Brotato"])
+        XCTAssertEqual(DealEngine.filter(deals, .all, query: "  dIvEr ").map(\.item.name), ["Dave the Diver"])
+
+        var h = HiddenGames()
+        h.hide(1); h.hide(2)
+        h.prune(keeping: [2, 3])
+        XCTAssertEqual(h.appIDs, [2])
+        h.unhide(2)
+        XCTAssertEqual(h.count, 0)
     }
 
     func testIgnoresStoreItemsNotOnTheWishlist() {

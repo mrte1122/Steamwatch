@@ -62,7 +62,7 @@ enum SettingsKey {
     static let notifyFirstSale = "notifyFirstSale"
     static let notifyAnySale = "notifyAnySale"
     static let sentAlerts = "sentAlerts"                  // [String] DealAlert keys
-    static let showAllDeals = "showAllDeals"              // popover disclosure state
+    static let dealFilter = "dealFilter"                  // DealFilter raw value
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -80,7 +80,7 @@ enum SettingsKey {
             notifyNewLow: true,
             notifyFirstSale: true,
             notifyAnySale: false,
-            showAllDeals: false,
+            dealFilter: "all",
         ])
     }
 }

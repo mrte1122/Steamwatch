@@ -12,6 +12,10 @@ final class Store: ObservableObject {
     @Published private(set) var me: PlayerSummary?
     @Published private(set) var friendsOnline: [PlayerSummary] = []
     @Published private(set) var targets = Targets()
+    @Published private(set) var hidden = HiddenGames()
+    /// Every wishlisted game the store knows about, for the Targets and Hidden lists in Settings.
+    @Published private(set) var items: [AppID: StoreItem] = [:]
+    private var wishlist: [WishlistEntry] = []
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var lastError: String?
     /// Problems with the keyed calls (playtime, friends) don't hide the deals, so they get their own line.
@@ -34,6 +38,7 @@ final class Store: ObservableObject {
     private let historyFile = JSONFile<PriceHistory>(url: directory.appendingPathComponent("price-history.json"))
     private let playtimeFile = JSONFile<PlaytimeLog>(url: directory.appendingPathComponent("playtime.json"))
     private let targetsFile = JSONFile<Targets>(url: directory.appendingPathComponent("targets.json"))
+    private let hiddenFile = JSONFile<HiddenGames>(url: directory.appendingPathComponent("hidden.json"))
 
     var steamID: String { UserDefaults.standard.string(forKey: SettingsKey.steamID) ?? "" }
     var apiKey: String? { Keychain.load(.apiKey) }
@@ -54,6 +59,7 @@ final class Store: ObservableObject {
         history = historyFile.load() ?? PriceHistory()
         playtime = playtimeFile.load() ?? PlaytimeLog()
         targets = targetsFile.load() ?? Targets()
+        hidden = hiddenFile.load() ?? HiddenGames()
         if let cached = cacheFile.load() { apply(cached) }
         clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
@@ -80,10 +86,12 @@ final class Store: ObservableObject {
     func resetForNewProfile() {
         history = PriceHistory()
         playtime = PlaytimeLog()
-        deals = []; recentGames = []; me = nil; friendsOnline = []; wishlistCount = 0
+        hidden = HiddenGames()
+        deals = []; recentGames = []; me = nil; friendsOnline = []; wishlistCount = 0; items = [:]; wishlist = []
         lastUpdated = nil; lastError = nil; playerError = nil
         try? historyFile.save(history)
         try? playtimeFile.save(playtime)
+        try? hiddenFile.save(hidden)
         UserDefaults.standard.set([String](), forKey: SettingsKey.sentAlerts)
         armed = false
         Task { await refresh(force: true) }
@@ -109,12 +117,17 @@ final class Store: ObservableObject {
         do {
             let wishlist = try await client.wishlist(steamID: id)
             let items = wishlist.isEmpty ? [] : try await client.storeItems(wishlist.map(\.appID))
-            let fresh = DealEngine.deals(wishlist: wishlist, items: items, history: history, targets: targets.byAppID)
+            let ids = Set(wishlist.map(\.appID))
+            hidden.prune(keeping: ids)
+            try? hiddenFile.save(hidden)
+            let fresh = DealEngine.deals(wishlist: wishlist, items: items, history: history, targets: targets.byAppID, hidden: hidden.appIDs)
             let at = Date()
             for item in items { history.observe(item, at: at) }
-            history.prune(keeping: Set(wishlist.map(\.appID)), now: at)
+            history.prune(keeping: ids, now: at)
             try? historyFile.save(history)
             deals = fresh
+            self.wishlist = wishlist
+            self.items = Dictionary(items.map { ($0.appID, $0) }, uniquingKeysWith: { a, _ in a })
             wishlistCount = wishlist.count
             lastUpdated = at
             lastError = wishlist.isEmpty ? "Wishlist is empty or private. Steam → Privacy Settings → Game details: Public." : nil
@@ -150,8 +163,8 @@ final class Store: ObservableObject {
             playerError = nil
         }
         armed = true
-        if lastUpdated != nil {
-            try? cacheFile.save(CachedState(fetchedAt: lastUpdated ?? Date(), wishlist: [], items: [], recentGames: recentGames,
+        if let at = lastUpdated {
+            try? cacheFile.save(CachedState(fetchedAt: at, wishlist: wishlist, items: Array(items.values), recentGames: recentGames,
                                             me: me, friendsOnline: friendsOnline))
         }
     }
@@ -169,38 +182,85 @@ final class Store: ObservableObject {
         d.set(Array(sent.sorted().suffix(1000)), forKey: SettingsKey.sentAlerts)
     }
 
+    /// The last reading, shown until the first refresh lands. Lows are judged against the history
+    /// that already includes this reading, so nothing shows as "new low" until then.
     private func apply(_ cached: CachedState) {
         recentGames = cached.recentGames
         me = cached.me
         friendsOnline = cached.friendsOnline
+        wishlist = cached.wishlist
+        items = Dictionary(cached.items.map { ($0.appID, $0) }, uniquingKeysWith: { a, _ in a })
+        if !cached.wishlist.isEmpty {
+            wishlistCount = cached.wishlist.count
+            deals = DealEngine.deals(wishlist: cached.wishlist, items: cached.items, history: history, targets: targets.byAppID, hidden: hidden.appIDs)
+            lastUpdated = cached.fetchedAt
+        }
     }
 
-    // MARK: Targets
+    // MARK: Targets and hiding
 
     func setTarget(_ cents: Int?, for appID: AppID) {
         targets[appID] = cents
         try? targetsFile.save(targets)
-        // Re-rank without a network round trip.
-        deals = DealEngine.deals(wishlist: deals.map { WishlistEntry(appID: $0.item.appID, priority: 0, added: .distantPast) },
-                                 items: deals.map(\.item), history: historyWithoutCurrent(), targets: targets.byAppID)
+        rerank()
+    }
+
+    func hide(_ appID: AppID) {
+        if let d = deals.first(where: { $0.id == appID }) { hiddenDeals.append(d) }
+        hidden.hide(appID)
+        try? hiddenFile.save(hidden)
+        rerank()
+    }
+
+    func unhide(_ appID: AppID) {
+        hidden.unhide(appID)
+        try? hiddenFile.save(hidden)
+        rerank()
+    }
+
+    func unhideAll() {
+        hidden = HiddenGames()
+        try? hiddenFile.save(hidden)
+        rerank()
+    }
+
+    /// Re-run the engine without a network round trip, over the last reading's wishlist and items.
+    private func rerank() {
+        if Demo.isActive {
+            deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history,
+                                     targets: targets.byAppID, hidden: hidden.appIDs)
+            return
+        }
+        guard !wishlist.isEmpty else { return }
+        deals = DealEngine.deals(wishlist: wishlist, items: Array(items.values), history: historyWithoutCurrent(), targets: targets.byAppID,
+                                 hidden: hidden.appIDs)
     }
 
     /// `deals` were judged against history *before* the latest reading; rebuilding them from the
-    /// stored lows would mark every deal "equal to the low". Reconstruct the earlier view instead.
+    /// stored lows would mark every deal "equal to the low". Reconstruct the earlier view for the
+    /// deals we have (hidden ones included, so unhiding restores their flags) and fall back to the
+    /// stored history for anything else.
     private func historyWithoutCurrent() -> PriceHistory {
-        var h = PriceHistory()
-        for d in deals {
-            guard let low = d.lowestSeenCents else { continue }
-            h.records[String(d.item.appID)] = .init(currency: d.price.currency, lowestCents: low, lowestAt: .distantPast, lastCents: low,
-                                                    lastSeen: .distantPast, firstSeen: .distantPast, seenOnSale: !d.isFirstSale)
+        var h = history
+        for d in deals + hiddenDeals {
+            if let low = d.lowestSeenCents {
+                h.records[String(d.item.appID)] = .init(currency: d.price.currency, lowestCents: low, lowestAt: .distantPast, lastCents: low,
+                                                        lastSeen: .distantPast, firstSeen: .distantPast, seenOnSale: !d.isFirstSale)
+            } else {
+                h.records[String(d.item.appID)] = nil
+            }
         }
         return h
     }
+
+    /// Deals hidden this session keep their pre-reading flags here so unhiding restores them exactly.
+    private var hiddenDeals: [Deal] = []
 
     // MARK: Demo
 
     func loadDemo() {
         targets = DemoData.targets
+        items = Dictionary(DemoData.items.map { ($0.appID, $0) }, uniquingKeysWith: { a, _ in a })
         deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history, targets: targets.byAppID)
         wishlistCount = 41
         recentGames = DemoData.recentGames
@@ -214,7 +274,7 @@ final class Store: ObservableObject {
     func diagnosticsText() -> String {
         var lines = ["Steamwatch \(SteamClient.version)", "steamID: \(steamID.isEmpty ? "(not set)" : steamID)", "api key: \(hasAPIKey ? "set" : "none")"]
         if let u = lastUpdated { lines.append("updated: \(u)") }
-        lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count)")
+        lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count) · hidden: \(hidden.count) · targets: \(targets.cents.count)")
         for d in deals { lines.append("  \(d.item.name): \(Format.price(d.price.finalCents, currency: d.price.currency)) −\(d.price.discountPercent)%\(d.meetsTarget ? " TARGET" : "")\(d.isNewLow ? " LOW" : "")\(d.isFirstSale ? " FIRST" : "")") }
         lines.append("played 2 wk: \(Format.hours(twoWeekMinutes)) · friends online: \(friendsOnline.count)")
         if let e = lastError { lines.append("error: \(e)") }

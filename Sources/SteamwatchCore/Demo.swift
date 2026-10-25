@@ -5,7 +5,7 @@ public enum DemoData {
     public static let now = Date()
 
     /// Sorted: Silksong (target + new low), Hades II (at target), Satisfactory (first sale),
-    /// then Outer Wilds, Brotato, Dave the Diver, Balatro by discount.
+    /// then by score: Dave the Diver (#2, 30+58), Balatro (#1, 20+60), Outer Wilds (50), Brotato (30).
     public static let items: [StoreItem] = [
         game(1030300, "Hollow Knight: Silksong", 1999, 1199, 40, ends: 4),
         game(1145350, "Hades II", 2999, 2249, 25, ends: 2),
@@ -20,8 +20,10 @@ public enum DemoData {
         game(892970, "Valheim", 1999, 1999, 0),
     ]
 
+    /// Balatro is ranked #1 and Dave the Diver #2 on the demo wishlist; the rest are unranked.
     public static let wishlist: [WishlistEntry] = items.enumerated().map {
-        WishlistEntry(appID: $1.appID, priority: $0, added: now.addingTimeInterval(-Double($0 + 1) * 30 * 86_400))
+        WishlistEntry(appID: $1.appID, priority: $1.appID == 2379780 ? 1 : $1.appID == 1868140 ? 2 : 0,
+                      added: now.addingTimeInterval(-Double($0 + 1) * 30 * 86_400))
     }
 
     public static let targets = Targets(cents: ["1030300": 1500, "1145350": 2249])

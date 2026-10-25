@@ -99,6 +99,41 @@ struct SettingsView: View {
                 Text("Right-click a game in the popover to set its target price.").font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Target prices") {
+                if store.targets.cents.isEmpty {
+                    Text("No targets yet. Right-click a deal in the popover and choose “Set Target…”.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.targets.byAppID.sorted { name($0.key) < name($1.key) }, id: \.key) { appID, cents in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(name(appID)).lineLimit(1)
+                                Text(currentPrice(appID)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(Format.price(cents, currency: currency(appID))).monospacedDigit()
+                            Button { store.setTarget(nil, for: appID) } label: { Image(systemName: "xmark.circle") }
+                                .buttonStyle(.borderless).help("Remove target")
+                        }
+                    }
+                }
+            }
+
+            Section("Hidden games") {
+                if store.hidden.count == 0 {
+                    Text("Nothing hidden. Right-click a deal and choose “Hide (Bought It)” to keep it out of the list until it leaves your wishlist.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.hidden.appIDs.sorted { name($0) < name($1) }, id: \.self) { appID in
+                        HStack {
+                            Text(name(appID)).lineLimit(1)
+                            Spacer()
+                            Button("Show again") { store.unhide(appID) }.controlSize(.small)
+                        }
+                    }
+                    Button("Show all \(store.hidden.count) again") { store.unhideAll() }.controlSize(.small)
+                }
+            }
+
             Section {
                 HStack {
                     Text("Steamwatch \(SteamClient.version)").foregroundStyle(.secondary)
@@ -111,6 +146,14 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func name(_ appID: AppID) -> String { store.items[appID]?.name ?? "App \(appID)" }
+    private func currency(_ appID: AppID) -> String { store.items[appID]?.price?.currency ?? "USD" }
+    private func currentPrice(_ appID: AppID) -> String {
+        guard let p = store.items[appID]?.price else { return "Price unknown" }
+        let s = "Now \(Format.price(p.finalCents, currency: p.currency))"
+        return p.isOnSale ? s + " (−\(p.discountPercent)%)" : s
     }
 
     private func saveKey() {
