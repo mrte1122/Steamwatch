@@ -23,7 +23,9 @@ struct PopoverView: View {
 
     private var filter: DealFilter { DealFilter(rawValue: filterRaw) ?? .all }
     private var sort: DealSort { DealSort(rawValue: sortRaw) ?? .best }
-    private var shown: [Deal] { sort.sorted(DealEngine.filter(store.deals, filter, query: query)) }
+    private var shown: [Deal] { sort.sorted(DealEngine.filter(store.deals, filter, query: query, rule: store.rule)) }
+    /// The Picks chip only exists while a rule is on.
+    private var chips: [DealFilter] { DealFilter.allCases.filter { $0 != .picks || store.rule != nil } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -31,7 +33,7 @@ struct PopoverView: View {
             locationBanner
             updateBanner
             if store.needsSetup {
-                SetupCard(openSettings: openSettings)
+                SetupCard(store: store, openSettings: openSettings)
             } else {
                 if adding {
                     AddGamePanel(store: store, initialQuery: previewSearch ?? "") { adding = false }
@@ -226,8 +228,8 @@ struct PopoverView: View {
                 .help("Order the list")
             }
             FlowLayout(spacing: 4) {
-                ForEach(DealFilter.allCases) { f in
-                    let count = DealEngine.filter(store.deals, f).count
+                ForEach(chips) { f in
+                    let count = DealEngine.filter(store.deals, f, rule: store.rule).count
                     Button {
                         filterRaw = f.rawValue
                     } label: {
@@ -264,7 +266,7 @@ struct PopoverView: View {
             ScrollView(.vertical) {
                 LazyVStack(spacing: 2) {
                     ForEach(shown) { deal in
-                        DealRow(deal: deal, now: store.now, sort: sort, watched: store.watchlist.contains(deal.id), editing: editingTarget == deal.id,
+                        DealRow(deal: deal, now: store.now, sort: sort, watched: store.watchlist.contains(deal.id), picked: store.rule?.matches(deal) ?? false, editing: editingTarget == deal.id,
                                 beginEdit: { editingTarget = deal.id },
                                 commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil },
                                 hide: { store.hide(deal.id) })
@@ -303,7 +305,9 @@ struct PopoverView: View {
                 Label("Playing \(game)", systemImage: "play.fill").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            Link(destination: Links.wishlist) { Image(systemName: "heart") }.help("Open your wishlist")
+            Button { SteamLink.open(Links.wishlist) } label: { Image(systemName: "list.star") }.help("Open your Steam wishlist")
+            Link(destination: Links.tip) { Image(systemName: "heart.fill").foregroundStyle(.pink) }
+                .help("Enjoying Steamwatch? Buy me a coffee on Ko-fi")
             Button { openSettings() } label: { Image(systemName: "gearshape") }.help("Settings")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("Quit Steamwatch")
         }
@@ -322,6 +326,8 @@ struct DealRow: View {
     var sort: DealSort = .best
     /// Added through store search rather than the Steam wishlist.
     var watched = false
+    /// Matches the user's standing deal rule.
+    var picked = false
     let editing: Bool
     let beginEdit: () -> Void
     let commit: (Int?) -> Void
@@ -372,9 +378,10 @@ struct DealRow: View {
         .frame(height: Self.height)
         .card(tint: deal.meetsTarget ? Color(ns: Theme.highlight) : nil)
         .contentShape(Rectangle())
-        .onTapGesture { if !editing { openURL(deal.item.storeURL) } }
+        .onTapGesture { if !editing { SteamLink.open(deal.item.storeURL) } }
         .contextMenu {
-            Button("Open Store Page") { openURL(deal.item.storeURL) }
+            Button(SteamLink.opensInApp ? "Open in Steam" : "Open Store Page") { SteamLink.open(deal.item.storeURL) }
+            if SteamLink.opensInApp { Button("Open in Browser") { openURL(deal.item.storeURL) } }
             Divider()
             Button("Set Target to \(Format.price(deal.price.finalCents, currency: deal.price.currency))") { commit(deal.price.finalCents) }
             Button(deal.targetCents == nil ? "Set Target Price…" : "Change Target Price…") {
@@ -396,6 +403,7 @@ struct DealRow: View {
         if deal.isFirstSale { parts.append("first sale ever") }
         else if deal.isNewLow { parts.append("new low") }
         else if !deal.meetsTarget, let low = deal.lowestSeenCents, low < deal.price.finalCents { parts.append("low seen \(Format.price(low, currency: cur))") }
+        if picked, !deal.meetsTarget { parts.insert("your rule", at: 0) }
         if watched { parts.append("watching") }
         else if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
         if let ends = deal.price.saleEnds { parts.append("ends \(Format.saleEnds(ends, now: now))") }
@@ -468,7 +476,7 @@ struct FriendsMenu: View {
     var body: some View {
         Menu {
             ForEach(friends) { f in
-                Button { openURL(f.profileURL) } label: {
+                Button { SteamLink.open(f.profileURL) } label: {
                     Text(f.currentGame.map { "\(f.name) · \($0)" } ?? f.name)
                 }
             }
@@ -607,13 +615,24 @@ struct FlowLayout: Layout {
 }
 
 struct SetupCard: View {
+    @ObservedObject var store: Store
     let openSettings: () -> Void
     var body: some View {
+        let found = store.localAccounts.first
         VStack(alignment: .leading, spacing: 8) {
             Label("Connect your Steam profile", systemImage: "person.crop.circle.badge.plus").font(.callout.weight(.medium))
-            Text("Paste your profile URL or SteamID64 in Settings. Your wishlist must be public (Steam → Privacy → Game details) so the store can be checked without signing in.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Open Settings") { openSettings() }.controlSize(.small).buttonStyle(.borderedProminent)
+            if let found {
+                Text("Steam on this Mac is signed in as **\(found.displayName)**. Your wishlist must be public (Steam → Privacy → Game details) so the store can be checked without signing in.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Use \(found.displayName)") { store.useAccount(found) }.controlSize(.small).buttonStyle(.borderedProminent)
+                    Button("Another account…") { openSettings() }.controlSize(.small)
+                }
+            } else {
+                Text("Paste your profile URL or SteamID64 in Settings. Your wishlist must be public (Steam → Privacy → Game details) so the store can be checked without signing in.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Open Settings") { openSettings() }.controlSize(.small).buttonStyle(.borderedProminent)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

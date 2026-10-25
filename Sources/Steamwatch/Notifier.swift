@@ -39,7 +39,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         if let s = response.notification.request.content.userInfo["url"] as? String, let url = URL(string: s) {
-            DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            DispatchQueue.main.async { MainActor.assumeIsolated { SteamLink.open(url) } }
         }
         completionHandler()
     }

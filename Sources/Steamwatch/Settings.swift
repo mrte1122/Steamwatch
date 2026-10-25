@@ -65,6 +65,11 @@ enum SettingsKey {
     static let dealFilter = "dealFilter"                  // DealFilter raw value
     static let dealSort = "dealSort"                      // DealSort raw value
     static let autoUpdateCheck = "autoUpdateCheck"
+    static let openInSteam = "openInSteam"              // store/community links open in the Steam app
+    static let ruleEnabled = "ruleEnabled"                // the standing "any game at X% off" rule
+    static let ruleMinDiscount = "ruleMinDiscount"        // percent
+    static let ruleMinRating = "ruleMinRating"            // percent positive; 0 = any
+    static let ruleMaxPrice = "ruleMaxPrice"              // cents; 0 = any
     static let lastUpdateCheck = "lastUpdateCheck"        // Date
     static let notifiedUpdateVersion = "notifiedUpdateVersion"
 
@@ -87,7 +92,33 @@ enum SettingsKey {
             dealFilter: "all",
             dealSort: "best",
             autoUpdateCheck: true,
+            openInSteam: true,
+            ruleEnabled: false,
+            ruleMinDiscount: 75,
+            ruleMinRating: 85,
+            ruleMaxPrice: 0,
         ])
+    }
+}
+
+/// Opens Steam store and community pages in the Steam app when it's installed and the setting is
+/// on (`steam://openurl/` takes any steampowered.com or steamcommunity.com address), else the browser.
+@MainActor
+enum SteamLink {
+    static var steamInstalled: Bool {
+        NSWorkspace.shared.urlForApplication(toOpen: URL(string: "steam://openurl/https://store.steampowered.com/")!) != nil
+    }
+
+    static var opensInApp: Bool { UserDefaults.standard.bool(forKey: SettingsKey.openInSteam) && steamInstalled }
+
+    static func open(_ url: URL) {
+        let host = url.host ?? ""
+        if opensInApp, host.hasSuffix("steampowered.com") || host.hasSuffix("steamcommunity.com"),
+           let app = URL(string: "steam://openurl/" + url.absoluteString) {
+            NSWorkspace.shared.open(app)
+        } else {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
 

@@ -249,6 +249,106 @@ final class WatchlistTests: XCTestCase {
     }
 }
 
+final class DealRuleTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
+    let deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history, targets: DemoData.targets.byAppID)
+
+    func testRuleMatching() {
+        let half = DealRule(minDiscount: 50)
+        XCTAssertEqual(deals.filter(half.matches).map(\.item.name), ["Outer Wilds"])
+        let rated = DealRule(minDiscount: 20, minRating: 96)
+        XCTAssertEqual(Set(deals.filter(rated.matches).map(\.item.name)), ["Satisfactory", "Balatro", "Outer Wilds", "Brotato"])
+        let cheap = DealRule(minDiscount: 20, minRating: 96, maxPriceCents: 1200)
+        XCTAssertEqual(Set(deals.filter(cheap.matches).map(\.item.name)), ["Balatro", "Brotato"])
+        XCTAssertEqual(cheap.summary(), "20%+ off · rated 96%+ · under $12.00")
+
+        let fewReviews = Deal(item: StoreItem(appID: 9, name: "Tiny", capsuleURL: nil, price: nil,
+                                              reviews: ReviewSummary(percentPositive: 100, count: 3, label: "")),
+                              price: Price(currency: "USD", finalCents: 100, originalCents: 1000, discountPercent: 90),
+                              lowestSeenCents: nil, targetCents: nil, isFirstSale: false)
+        XCTAssertFalse(rated.matches(fewReviews), "3 reviews isn't a rating")
+        XCTAssertTrue(DealRule(minDiscount: 50).matches(fewReviews), "no rating condition: any game counts")
+    }
+
+    func testRuleAlertsRankAfterTargetsAndShowInPicks() {
+        var policy = DealEngine.Policy()
+        policy.rule = DealRule(minDiscount: 30)
+        let alerts = DealEngine.alerts(for: deals, alreadySent: [], policy: policy, armed: true)
+        let byName = Dictionary(uniqueKeysWithValues: alerts.map { ($0.deal.item.name, $0.kind) })
+        XCTAssertEqual(byName["Hollow Knight: Silksong"], .target, "a target hit outranks the rule")
+        XCTAssertEqual(byName["Outer Wilds"], .rule)
+        XCTAssertEqual(byName["Brotato"], .rule)
+        XCTAssertEqual(byName["Satisfactory"], .firstSale, "20% off: not a rule match")
+        XCTAssertTrue(alerts.first { $0.deal.item.name == "Outer Wilds" }!.body.contains("96% positive"))
+        XCTAssertTrue(DealEngine.alerts(for: deals, alreadySent: [], policy: policy, armed: false).allSatisfy { $0.kind == .target },
+                      "rule matches wait for an armed refresh like other non-target alerts")
+
+        XCTAssertEqual(DealEngine.filter(deals, .picks, rule: policy.rule).count, 4)
+        XCTAssertTrue(DealEngine.filter(deals, .picks).isEmpty, "no rule, no picks")
+        let digest = NotificationPlan.plan(alerts, totalOnSale: 7, event: nil).digest
+        XCTAssertTrue(digest?.body.contains("match your rule") ?? false)
+    }
+}
+
+final class LocalSteamTests: XCTestCase {
+    let sample = """
+    "users"
+    {
+    	"76561197960287930"
+    	{
+    		"AccountName"		"oldalt"
+    		"PersonaName"		"Old \\"Alt\\""
+    		"MostRecent"		"0"
+    		"Timestamp"		"1600000000"
+    	}
+    	// a comment Steam doesn't write but parsers should survive
+    	"76561198000000001"
+    	{
+    		"AccountName"		"mainacct"
+    		"PersonaName"		"Main"
+    		"RememberPassword"		"1"
+    		"MostRecent"		"1"
+    		"Timestamp"		"1790000000"
+    	}
+    	"notanid"
+    	{
+    		"AccountName"		"x"
+    	}
+    }
+    """
+
+    func testParsesAccountsMostRecentFirst() {
+        let accounts = LocalSteam.parseLoginUsers(sample)
+        XCTAssertEqual(accounts.map(\.steamID), ["76561198000000001", "76561197960287930"])
+        XCTAssertEqual(accounts[0].displayName, "Main")
+        XCTAssertTrue(accounts[0].mostRecent)
+        XCTAssertEqual(accounts[1].personaName, "Old \"Alt\"", "escaped quotes")
+        XCTAssertEqual(accounts[1].lastLogin, Date(timeIntervalSince1970: 1_600_000_000))
+    }
+
+    func testLowercaseKeysFromNewerClients() {
+        let one = #""users" { "76561198000000001" { "AccountName" "a" "PersonaName" "P" "timestamp" "1790000000" "AutoLogin" "1" } }"#
+        let a = LocalSteam.parseLoginUsers(one)
+        XCTAssertEqual(a.first?.lastLogin, Date(timeIntervalSince1970: 1_790_000_000))
+        XCTAssertEqual(a.first?.mostRecent, false, "single-account files omit MostRecent")
+    }
+
+    func testToleratesJunkAndMissingFiles() {
+        XCTAssertTrue(LocalSteam.parseLoginUsers("").isEmpty)
+        XCTAssertTrue(LocalSteam.parseLoginUsers("not vdf at all").isEmpty)
+        XCTAssertTrue(LocalSteam.parseLoginUsers(#""users" { "76561198000000001" { "AccountName" "a""#).count == 1, "truncated file")
+        XCTAssertTrue(LocalSteam.accounts(paths: [URL(fileURLWithPath: "/nonexistent/loginusers.vdf")]).isEmpty)
+    }
+
+    func testReadsFromDisk() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("loginusers-\(UUID().uuidString).vdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try sample.write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertEqual(LocalSteam.accounts(paths: [URL(fileURLWithPath: "/nope"), url]).first?.accountName, "mainacct")
+    }
+}
+
 final class PriceHistoryTests: XCTestCase {
     override func setUp() { super.setUp(); _ = pinLocale }
 

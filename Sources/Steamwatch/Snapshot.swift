@@ -25,10 +25,13 @@ enum Snapshot {
             d.set(savedMode, forKey: SettingsKey.menuBarMode); d.set(savedMono, forKey: SettingsKey.monochrome)
 
             let savedFilter = d.object(forKey: SettingsKey.dealFilter), savedSort = d.object(forKey: SettingsKey.dealSort)
-            for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating"), ("sale-light", .aqua, "all", "best"), ("search-light", .aqua, "all", "best")] {
+            let savedRule = [SettingsKey.ruleEnabled, SettingsKey.ruleMinDiscount, SettingsKey.ruleMinRating].map { ($0, d.object(forKey: $0)) }
+            for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating"), ("sale-light", .aqua, "all", "best"), ("search-light", .aqua, "all", "best"), ("picks-light", .aqua, "picks", "best")] {
                 d.set(filter, forKey: SettingsKey.dealFilter)
                 d.set(sort, forKey: SettingsKey.dealSort)
                 if name == "sale-light" { store.previewSaleEvent() } else { store.clearPreviewSaleEvent() }
+                d.set(name == "picks-light", forKey: SettingsKey.ruleEnabled)
+                if name == "picks-light" { d.set(30, forKey: SettingsKey.ruleMinDiscount); d.set(90, forKey: SettingsKey.ruleMinRating) }
                 let view = PopoverView(store: store, updater: Updater(), openSettings: {}, previewSearch: name == "search-light" ? "er" : nil)
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -48,6 +51,7 @@ enum Snapshot {
             }
             d.set(savedFilter, forKey: SettingsKey.dealFilter)
             d.set(savedSort, forKey: SettingsKey.dealSort)
+            for (k, v) in savedRule { d.set(v, forKey: k) }
             print("Snapshots written to \(dir.path)")
             exit(0)
         }

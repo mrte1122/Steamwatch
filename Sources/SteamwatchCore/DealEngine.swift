@@ -2,7 +2,7 @@ import Foundation
 
 /// A notification the platform layer should show. `key` deduplicates: one alert per app per price.
 public struct DealAlert: Equatable, Sendable, Identifiable {
-    public enum Kind: String, Codable, Sendable { case target, newLow, firstSale, sale }
+    public enum Kind: String, Codable, Sendable { case target, rule, newLow, firstSale, sale }
 
     public let kind: Kind
     public let deal: Deal
@@ -14,6 +14,7 @@ public struct DealAlert: Equatable, Sendable, Identifiable {
     public var title: String {
         switch kind {
         case .target: return "\(deal.item.name) hit your target price"
+        case .rule: return "\(deal.item.name) matches your deal rule"
         case .newLow: return "\(deal.item.name) is at a new low"
         case .firstSale: return "\(deal.item.name) is on sale for the first time"
         case .sale: return "\(deal.item.name) is on sale"
@@ -25,6 +26,7 @@ public struct DealAlert: Equatable, Sendable, Identifiable {
         // A target hit can come from a permanent price cut, with no discount to show.
         var s = deal.price.discountPercent > 0 ? "\(price) (−\(deal.price.discountPercent)%)" : "\(price), a new regular price"
         if kind == .target || kind == .newLow, deal.isLowestSeen, deal.lowestSeenCents != nil { s += ", the lowest it's been" }
+        if kind == .rule, let r = deal.item.reviews { s += " · \(r.percentPositive)% positive" }
         if let ends = deal.price.saleEnds { s += " · ends \(Format.saleEnds(ends))" }
         return s
     }
@@ -54,6 +56,8 @@ public enum DealEngine {
         public var newLow = true
         public var firstSale = true
         public var anySale = false
+        /// A standing "any game at X% off" rule; nil when off.
+        public var rule: DealRule?
         public init() {}
         public init(target: Bool, newLow: Bool, firstSale: Bool, anySale: Bool) {
             self.target = target; self.newLow = newLow; self.firstSale = firstSale; self.anySale = anySale
@@ -68,6 +72,7 @@ public enum DealEngine {
         deals.compactMap { deal in
             let kind: DealAlert.Kind
             if deal.meetsTarget, policy.target { kind = .target }
+            else if let rule = policy.rule, rule.matches(deal) { kind = .rule }
             else if deal.isFirstSale, policy.firstSale { kind = .firstSale }
             else if deal.isNewLow, policy.newLow { kind = .newLow }
             else if policy.anySale { kind = .sale }
@@ -83,10 +88,10 @@ public enum DealEngine {
     }
 
     /// Narrow a (sorted) deal list for the popover; order is preserved.
-    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "") -> [Deal] {
+    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "", rule: DealRule? = nil) -> [Deal] {
         let q = query.trimmingCharacters(in: .whitespaces)
         return deals.filter { d in
-            guard filter.matches(d) else { return false }
+            guard filter.matches(d, rule: rule) else { return false }
             return q.isEmpty || d.item.name.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
     }
@@ -94,13 +99,14 @@ public enum DealEngine {
 
 /// The chip row above the deal list.
 public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
-    case all, targets, lows, halfOff, underTen, mac, deck
+    case all, picks, targets, lows, halfOff, underTen, mac, deck
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .all: return "All"
+        case .picks: return "Picks"
         case .targets: return "Targets"
         case .lows: return "Lows"
         case .halfOff: return "50%+"
@@ -110,9 +116,11 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    public func matches(_ d: Deal) -> Bool {
+    /// `.picks` needs the user's rule; without one it matches nothing (and the chip is hidden).
+    public func matches(_ d: Deal, rule: DealRule? = nil) -> Bool {
         switch self {
         case .all: return true
+        case .picks: return rule?.matches(d) ?? false
         case .targets: return d.targetCents != nil
         case .lows: return d.isFirstSale || d.isNewLow
         case .halfOff: return d.price.discountPercent >= 50
@@ -120,6 +128,38 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
         case .mac: return d.item.platforms?.mac ?? false
         case .deck: return (d.item.platforms?.deck ?? .unknown).rawValue >= Platforms.Deck.playable.rawValue
         }
+    }
+}
+
+/// "Tell me about any game that's at least this good a deal": a standing rule that covers the
+/// whole wishlist (and watched games) without setting a limit on each one.
+public struct DealRule: Codable, Equatable, Sendable {
+    public var minDiscount: Int
+    /// Steam review percentage; nil means any. Games with fewer than `minReviews` reviews don't
+    /// count as rated, so a 100% from three people doesn't qualify.
+    public var minRating: Int?
+    public var maxPriceCents: Int?
+    public var minReviews: Int
+
+    public init(minDiscount: Int, minRating: Int? = nil, maxPriceCents: Int? = nil, minReviews: Int = 50) {
+        self.minDiscount = minDiscount; self.minRating = minRating; self.maxPriceCents = maxPriceCents; self.minReviews = minReviews
+    }
+
+    public func matches(_ d: Deal) -> Bool {
+        guard d.price.discountPercent >= minDiscount else { return false }
+        if let max = maxPriceCents, d.price.finalCents > max { return false }
+        if let min = minRating {
+            guard let r = d.item.reviews, r.count >= minReviews, r.percentPositive >= min else { return false }
+        }
+        return true
+    }
+
+    /// "75%+ off · rated 85%+ · under $20.00"
+    public func summary(currency: String = "USD") -> String {
+        var parts = ["\(minDiscount)%+ off"]
+        if let r = minRating { parts.append("rated \(r)%+") }
+        if let m = maxPriceCents { parts.append("under \(Format.price(m, currency: currency))") }
+        return parts.joined(separator: " · ")
     }
 }
 

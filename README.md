@@ -1,5 +1,10 @@
 # Steamwatch
 
+[![Build](https://github.com/mrte1122/Steamwatch/actions/workflows/build.yml/badge.svg)](https://github.com/mrte1122/Steamwatch/actions/workflows/build.yml)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/mrte90)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
+![MIT license](https://img.shields.io/badge/license-MIT-green)
+
 A macOS menu-bar app that watches your Steam wishlist for sales. The menu bar shows how many
 wishlisted games are discounted right now; the dropdown lists them (target hits first, then
 first-ever sales and new lows), tracks the lowest price seen for each, shows your playtime this
@@ -25,8 +30,10 @@ Recent Homebrew versions only load casks from third-party taps you've trusted, h
 
 ## Setup
 
-1. Launch Steamwatch; Settings opens on first run.
-2. In Settings, paste your Steam profile URL (`https://steamcommunity.com/profiles/7656…` or
+1. Launch Steamwatch. If Steam is installed on this Mac, the popover offers **Use <your name>**:
+   Steamwatch reads the signed-in account from Steam's local `loginusers.vdf` (nothing is sent
+   anywhere) and you're done with this step. Otherwise Settings opens on first run.
+2. Or, in Settings, paste your Steam profile URL (`https://steamcommunity.com/profiles/7656…` or
    `https://steamcommunity.com/id/yourname`) and click Connect.
 3. Your wishlist must be public: on Steam, Profile → Edit Profile → Privacy Settings → set
    **Game details** to Public. The wishlist and store prices are read without signing in.
@@ -39,7 +46,12 @@ and click **Watch**. You can give it a price limit; you're notified the moment i
 price, whether through a sale or a permanent price cut. Watched games are checked on every
 refresh alongside your wishlist and listed in Settings → Watching.
 
-Click a game to open its store page. Right-click it to set a target price (or "Set Target to
+For the whole wishlist at once, turn on **Settings → Deal rule**: "tell me about any watched game
+that's at least 75% off, rated 85%+, under $20" (each part adjustable). Matches show under the
+**Picks** chip and notify as new deals appear.
+
+Click a game to open its store page, in the Steam app if it's installed (Settings → Menu bar →
+Open games in the Steam app), otherwise in your browser. Right-click it to set a target price (or "Set Target to
 $X" for the current sale price) or to hide it once you've bought it; hidden games stay out of the
 list until they leave your wishlist. Settings lists every target and hidden game. With more than
 a few deals the list gets a search field, a sort menu (Best match, Highest rated, Biggest
@@ -66,6 +78,8 @@ little for games with under 500 reviews; "Deck" means Verified or Playable.
   alerts (new lows, first sales) post individually only when there are a few; a burst of four or
   more, or any during a big sale, becomes a single digest like "Steam sale: 312 wishlist games on
   sale · 4 under target · 37 first sales · most end in 6d".
+- **Freshness**: besides the timer, Steamwatch refreshes when your Mac wakes or the network comes
+  back, if the last reading is more than five minutes old.
 - **Played this week** samples Steam's "last two weeks" counter on every refresh and attributes
   each increase to the day it was noticed, so the daily bars fill in while the app is running.
   Until there is a week of samples it also shows the raw two-week total.
@@ -151,4 +165,4 @@ Steam is not affiliated with this project.
 
 ## License
 
-MIT.
+MIT. Steamwatch is free; if it saves you money on a sale, you can [buy me a coffee on Ko-fi](https://ko-fi.com/mrte90).

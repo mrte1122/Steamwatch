@@ -68,6 +68,7 @@ public struct DealDigest: Equatable, Sendable {
         var parts: [String] = []
         let count = { (k: DealAlert.Kind) in self.alerts.filter { $0.kind == k }.count }
         if count(.target) > 0 { parts.append("\(count(.target)) under target") }
+        if count(.rule) > 0 { parts.append("\(count(.rule)) match your rule") }
         if count(.firstSale) > 0 { parts.append("\(count(.firstSale)) first sales") }
         if count(.newLow) > 0 { parts.append("\(count(.newLow)) new lows") }
         if count(.sale) > 0, parts.isEmpty { parts.append("\(count(.sale)) on sale") }

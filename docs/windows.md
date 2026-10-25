@@ -31,6 +31,8 @@ Everything below is in the core and needs no porting:
 | Sort orders | `DealSort` | pure function; rating sort weights by review count |
 | Sale-event detection and notification digest | `SaleEvent`, `NotificationPlan` | `sale-event.json`; pure functions |
 | Store search and the watchlist | `SteamClient.search`, `Watchlist` | `watchlist.json`; watched games join the wishlist as unranked entries |
+| Standing deal rule and the Picks chip | `DealRule`, `DealFilter.picks` | pure functions |
+| Signed-in account from the local Steam client | `LocalSteam.accounts()` | already looks in `%ProgramFiles(x86)%\\Steam\\config\\loginusers.vdf` on Windows |
 | Last good reading | `CachedState` | `cache.json` |
 | Price / hours / relative-time strings | `Format` | locale-aware via `NumberFormatter` |
 | Sample data | `DemoData` | for screenshots and tests |
@@ -47,7 +49,7 @@ Mirror `Sources/Steamwatch` file by file:
 | `MenuBarIcon.swift` | draws "tag + count" into the status item | tray icons are 16×16 and can't carry text well: draw the count into the icon bitmap, or show it in the tooltip and flyout |
 | `PopoverView.swift`, `SettingsView.swift` | SwiftUI | WinUI 3 / WPF; the row model is `Deal`, `DayPlaytime`, `PlayerSummary` |
 | `Keychain.swift` | API key storage | Windows Credential Manager (`CredWrite`) or DPAPI |
-| `Notifier.swift` | `UNUserNotificationCenter`, opens the store page on click | toast notifications (`Windows.UI.Notifications`) with the store URL as the launch argument |
+| `Notifier.swift` | `UNUserNotificationCenter`, opens the store page (in Steam via `steam://openurl/`) on click | toast notifications (`Windows.UI.Notifications`) with the store URL as the launch argument |
 | `Settings.swift` | `UserDefaults` keys and defaults | registry or a `settings.json`; keep the key names so docs stay shared |
 | `Entry.swift` | `--once`, `--demo`, `--selftest`, `--snapshot` | keep `--once` and `--demo` at least; they make debugging painless |
 

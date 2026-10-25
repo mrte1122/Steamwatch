@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var store: Store
     @ObservedObject var updater: Updater
     @AppStorage(SettingsKey.autoUpdateCheck) private var autoUpdate = true
+    @AppStorage(SettingsKey.openInSteam) private var openInSteam = true
 
     @AppStorage(SettingsKey.profileInput) private var profileInput = ""
     @AppStorage(SettingsKey.steamID) private var steamID = ""
@@ -21,6 +22,10 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.notifyNewLow) private var notifyNewLow = true
     @AppStorage(SettingsKey.notifyFirstSale) private var notifyFirstSale = true
     @AppStorage(SettingsKey.notifyAnySale) private var notifyAnySale = false
+    @AppStorage(SettingsKey.ruleEnabled) private var ruleEnabled = false
+    @AppStorage(SettingsKey.ruleMinDiscount) private var ruleMinDiscount = 75
+    @AppStorage(SettingsKey.ruleMinRating) private var ruleMinRating = 85
+    @AppStorage(SettingsKey.ruleMaxPrice) private var ruleMaxPrice = 0
 
     @State private var apiKey = Keychain.load(.apiKey) ?? ""
     @State private var profileStatus: String?
@@ -30,6 +35,18 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Steam account") {
+                ForEach(store.localAccounts.filter { $0.steamID != steamID }) { account in
+                    HStack {
+                        Image(systemName: "desktopcomputer").foregroundStyle(.secondary)
+                        Text("Signed in to Steam on this Mac: **\(account.displayName)**")
+                        Spacer()
+                        Button("Use this account") {
+                            store.useAccount(account)
+                            profileStatus = "Connected to \(account.displayName)."
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                    }
+                }
                 HStack {
                     TextField("Profile URL or SteamID64", text: $profileInput, prompt: Text("https://steamcommunity.com/id/yourname"))
                         .onSubmit { Task { await connect() } }
@@ -81,6 +98,9 @@ struct SettingsView: View {
                 }
                 Toggle("Playtime section", isOn: $showPlaytime)
                 Toggle("Friends online", isOn: $showFriends)
+                Toggle("Open games in the Steam app", isOn: $openInSteam)
+                    .disabled(!SteamLink.steamInstalled)
+                    .help(SteamLink.steamInstalled ? "Otherwise store pages open in your browser." : "Steam isn't installed, so pages open in your browser.")
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in
                         do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
@@ -99,6 +119,26 @@ struct SettingsView: View {
                 }
                 .disabled(!notificationsEnabled)
                 Text("Right-click a game in the popover to set its target price.").font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Deal rule") {
+                Toggle("Tell me about any watched game that's a deal like this", isOn: $ruleEnabled)
+                Group {
+                    Picker("At least", selection: $ruleMinDiscount) {
+                        ForEach([30, 40, 50, 60, 70, 75, 80, 90], id: \.self) { Text("\($0)% off").tag($0) }
+                    }
+                    Picker("Rated", selection: $ruleMinRating) {
+                        Text("Any rating").tag(0)
+                        ForEach([70, 80, 85, 90, 95], id: \.self) { Text("\($0)%+ positive").tag($0) }
+                    }
+                    Picker("Price", selection: $ruleMaxPrice) {
+                        Text("Any price").tag(0)
+                        ForEach([500, 1000, 1500, 2000, 3000], id: \.self) { Text("Under \(Format.price($0, currency: store.deals.first?.price.currency ?? "USD"))").tag($0) }
+                    }
+                }
+                .disabled(!ruleEnabled)
+                Text("Covers your whole wishlist and watched games without setting a limit on each. Matches show under the Picks chip and notify as new deals appear; games need 50+ reviews to count as rated.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Price limits") {

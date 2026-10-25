@@ -1,5 +1,7 @@
 import Combine
+import AppKit
 import Foundation
+import Network
 import SteamwatchCore
 
 /// Owns the refresh loop, the on-disk files and everything the popover shows.
@@ -77,6 +79,34 @@ final class Store: ObservableObject {
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.scheduleTimer() }
         }
+        // After sleep or an outage the 30-minute timer can leave prices hours old; catch up instead.
+        // A few seconds' delay lets Wi-Fi reconnect after wake.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                Task { @MainActor in self?.catchUp() }
+            }
+        }
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                guard let self else { return }
+                if path.status == .satisfied {
+                    if self.networkWasDown { self.networkWasDown = false; self.catchUp() }
+                } else {
+                    self.networkWasDown = true
+                }
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "Steamwatch.network"))
+    }
+
+    private let pathMonitor = NWPathMonitor()
+    private var networkWasDown = false
+
+    /// Refresh after wake or reconnect unless the last reading is under five minutes old. Not forced,
+    /// so a rate-limit cooldown still holds.
+    private func catchUp() {
+        if let last = lastUpdated, Date().timeIntervalSince(last) < 300 { return }
+        Task { await refresh() }
     }
 
     private var scheduledInterval: TimeInterval = 0
@@ -278,8 +308,9 @@ final class Store: ObservableObject {
     private func notify(_ deals: [Deal]) {
         let d = UserDefaults.standard
         var sent = Set(d.stringArray(forKey: SettingsKey.sentAlerts) ?? [])
-        let policy = DealEngine.Policy(target: d.bool(forKey: SettingsKey.notifyTarget), newLow: d.bool(forKey: SettingsKey.notifyNewLow),
+        var policy = DealEngine.Policy(target: d.bool(forKey: SettingsKey.notifyTarget), newLow: d.bool(forKey: SettingsKey.notifyNewLow),
                                        firstSale: d.bool(forKey: SettingsKey.notifyFirstSale), anySale: d.bool(forKey: SettingsKey.notifyAnySale))
+        policy.rule = rule
         let alerts = d.bool(forKey: SettingsKey.notificationsEnabled)
             ? DealEngine.alerts(for: deals, alreadySent: sent, policy: policy, armed: armed) : []
         // Target hits post on their own; a burst of other alerts, or any during a big sale, becomes one digest.
@@ -309,6 +340,29 @@ final class Store: ObservableObject {
     }
 
     // MARK: Targets and hiding
+
+    /// The user's standing deal rule from Settings, or nil when it's off.
+    var rule: DealRule? {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: SettingsKey.ruleEnabled) else { return nil }
+        let rating = d.integer(forKey: SettingsKey.ruleMinRating), price = d.integer(forKey: SettingsKey.ruleMaxPrice)
+        return DealRule(minDiscount: d.integer(forKey: SettingsKey.ruleMinDiscount),
+                        minRating: rating > 0 ? rating : nil, maxPriceCents: price > 0 ? price : nil)
+    }
+
+    // MARK: Account
+
+    /// Accounts the Steam client on this Mac has signed in with, for one-click setup. Read on demand:
+    /// it's a small local file and changes when the user switches accounts in Steam.
+    var localAccounts: [LocalSteamAccount] { Demo.isActive ? [] : LocalSteam.accounts() }
+
+    func useAccount(_ account: LocalSteamAccount) {
+        let d = UserDefaults.standard
+        let changed = d.string(forKey: SettingsKey.steamID) != account.steamID
+        d.set(account.steamID, forKey: SettingsKey.steamID)
+        d.set("https://steamcommunity.com/profiles/\(account.steamID)/", forKey: SettingsKey.profileInput)
+        if changed { resetForNewProfile() } else { Task { await refresh(force: true) } }
+    }
 
     // MARK: Watching by search
 
