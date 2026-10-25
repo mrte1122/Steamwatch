@@ -319,6 +319,19 @@ final class Updater: ObservableObject {
         return team == "not set" || team.isEmpty ? nil : team
     }
 
+    /// An install from before the rename, updated by its own (pre-rename) updater, still sits at
+    /// …/Steamwatch.app. Move it to Vaporwatch.app and relaunch from there; true if that happened
+    /// (the app is about to quit). Skipped when the folder isn't writable or the name is taken.
+    static func renameLegacyBundleIfNeeded() -> Bool {
+        let fm = FileManager.default
+        let current = Bundle.main.bundleURL
+        guard current.lastPathComponent == "Steamwatch.app", installMode == .replaceBundle else { return false }
+        let target = current.deletingLastPathComponent().appendingPathComponent("Vaporwatch.app")
+        guard !fm.fileExists(atPath: target.path), (try? fm.moveItem(at: current, to: target)) != nil else { return false }
+        relaunch(target)
+        return true
+    }
+
     private static func relaunch(_ app: URL) {
         // A detached shell outlives this process, waits for it to quit, then reopens the new bundle.
         let p = Process()
