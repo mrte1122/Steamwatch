@@ -50,12 +50,15 @@ For the whole wishlist at once, turn on **Settings → Deal rule**: "tell me abo
 that's at least 75% off, rated 85%+, under $20" (each part adjustable). Matches show under the
 **Picks** chip and notify as new deals appear.
 
-**You might like** suggests discounted games that aren't on your wishlist but fit it. Steamwatch
+The popover has two tabs, **Deals** and **For You** (⌘1 / ⌘2), at a fixed size so it never jumps
+around. **For You** suggests discounted games that aren't on your wishlist but fit it. Steamwatch
 reads the store tags of your wishlisted games (ignoring broad ones like "Indie" or "Singleplayer",
 and counting the games you've ranked highest double), asks Steam for discounted games under your
 top tags, and keeps the best-reviewed fits (85%+ positive from 500+ reviews). Click **+** to watch
-one or **✕** for "not interested". It checks twice a day; with a Web API key, games you own are
-skipped. Turn it off in Settings → General.
+one; **✕** offers **I Already Own This** or **Not Interested**, and either keeps it out for good.
+It checks twice a day. Steam only shares your game library through a Web API key, so with one,
+everything you own is skipped automatically; the For You tab has a field to paste one. Turn
+suggestions off in Settings → General.
 
 Right-click a deal for **Notify Me At** (25/50/75% off or the lowest seen, in one click),
 **Mute Notifications** (it stays in the list but never alerts) or **Hide (Bought It)**. Deal

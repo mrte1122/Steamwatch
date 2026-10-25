@@ -254,6 +254,21 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Marked as owned") {
+                if store.ownedManual.isEmpty {
+                    Text("Games you mark “I already own this” in For You are listed here and never suggested.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.ownedManual.sorted(), id: \.self) { appID in
+                        HStack {
+                            Text(ownedName(appID)).lineLimit(1)
+                            Spacer()
+                            Button("Remove") { store.markOwned(appID, false) }.controlSize(.small)
+                        }
+                    }
+                }
+            }
+
             Section("Hidden games") {
                 if store.hidden.count == 0 {
                     Text("Nothing hidden. Right-click a deal and choose “Hide (Bought It)” to keep it out of the list until it leaves your wishlist.")
@@ -319,6 +334,9 @@ struct SettingsView: View {
     }
 
     private func name(_ appID: AppID) -> String { store.items[appID]?.name ?? "App \(appID)" }
+    private func ownedName(_ appID: AppID) -> String {
+        store.items[appID]?.name ?? store.suggestions?.suggestions.first { $0.id == appID }?.item.name ?? "App \(appID)"
+    }
     private func watchName(_ appID: AppID) -> String { store.items[appID]?.name ?? store.watchlist.name(appID) ?? "App \(appID)" }
     private func currency(_ appID: AppID) -> String { store.items[appID]?.price?.currency ?? "USD" }
     private func currentPrice(_ appID: AppID) -> String {

@@ -14,6 +14,7 @@ struct PopoverView: View {
     @AppStorage(SettingsKey.showPlaytime) private var showPlaytime = true
     @AppStorage(SettingsKey.showFriends) private var showFriends = true
     @AppStorage(SettingsKey.showSuggestions) private var showSuggestions = true
+    @AppStorage(SettingsKey.popoverTab) private var tabRaw = "deals"
     @State private var query = ""
     @State private var editingTarget: AppID?
     /// The store-search panel replaces the deal list while open.
@@ -38,6 +39,11 @@ struct PopoverView: View {
         }
     }
 
+    /// Fixed so the popover never resizes (and macOS never slides it sideways) when content changes.
+    static let height: CGFloat = 640
+
+    private var onForYou: Bool { showSuggestions && tabRaw == "forYou" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
@@ -45,15 +51,19 @@ struct PopoverView: View {
             updateBanner
             if store.needsSetup {
                 SetupCard(store: store, openSettings: openSettings)
+                Spacer(minLength: 0)
+            } else if adding {
+                AddGamePanel(store: store, initialQuery: previewSearch ?? "") { adding = false }
+                Spacer(minLength: 0)
             } else {
-                if adding {
-                    AddGamePanel(store: store, initialQuery: previewSearch ?? "") { adding = false }
+                if showSuggestions { tabPicker }
+                if onForYou {
+                    ForYouTab(store: store)
                 } else {
                     errorBanner
                     saleBanner
                     if searchShown || store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
-                    dealsSection
-                    if showSuggestions, !store.visibleSuggestions.isEmpty { SuggestionsSection(store: store) }
+                    dealsSection.frame(maxHeight: .infinity, alignment: .top)
                     if showPlaytime { playtimeSection }
                 }
             }
@@ -61,7 +71,7 @@ struct PopoverView: View {
             footer
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 340, height: Self.height)
         .onAppear { if previewSearch != nil { adding = true } }
         .background(shortcuts)
         .focusable()
@@ -70,6 +80,15 @@ struct PopoverView: View {
         .onKeyPress(.upArrow) { move(-1) }
         .onKeyPress(.return) { openSelection() }
         .onKeyPress(.escape) { backOut() }
+    }
+
+    private var tabPicker: some View {
+        Picker("View", selection: $tabRaw) {
+            Text("Deals \(store.deals.count)").tag("deals")
+            Text("For You \(store.visibleSuggestions.count)").tag("forYou")
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     // MARK: Keyboard
@@ -86,6 +105,8 @@ struct PopoverView: View {
             Button("Watch a game") { adding = true }.keyboardShortcut("n", modifiers: .command)
             Button("Refresh") { Task { await store.refresh(force: true) } }.keyboardShortcut("r", modifiers: .command)
             Button("Settings") { openSettings() }.keyboardShortcut(",", modifiers: .command)
+            Button("Deals") { adding = false; tabRaw = "deals" }.keyboardShortcut("1", modifiers: .command)
+            Button("For You") { adding = false; tabRaw = "forYou" }.keyboardShortcut("2", modifiers: .command)
         }
         .opacity(0)
         .allowsHitTesting(false)
@@ -93,7 +114,7 @@ struct PopoverView: View {
     }
 
     private func move(_ step: Int) -> KeyPress.Result {
-        guard !adding, !shown.isEmpty else { return .ignored }
+        guard !adding, !onForYou, !shown.isEmpty else { return .ignored }
         let ids = shown.map(\.id)
         let i = selection.flatMap { ids.firstIndex(of: $0) }
         let next = i.map { min(max($0 + step, 0), ids.count - 1) } ?? (step > 0 ? 0 : ids.count - 1)
@@ -102,7 +123,7 @@ struct PopoverView: View {
     }
 
     private func openSelection() -> KeyPress.Result {
-        guard !adding, let id = selection, let deal = shown.first(where: { $0.id == id }) else { return .ignored }
+        guard !adding, !onForYou, let id = selection, let deal = shown.first(where: { $0.id == id }) else { return .ignored }
         SteamLink.open(deal.item.storeURL)
         return .handled
     }
@@ -345,8 +366,6 @@ struct PopoverView: View {
                     }
                 }
             }
-            .frame(maxHeight: CGFloat(visibleRows) * DealRow.height + CGFloat(visibleRows - 1) * 2)
-            .fixedSize(horizontal: false, vertical: shown.count <= visibleRows)
             .onChange(of: selection) { _, id in if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } } }
             }
         }
@@ -584,31 +603,82 @@ struct FriendsMenu: View {
     }
 }
 
-/// "You might like": discounted games outside the wishlist that fit its tags.
-struct SuggestionsSection: View {
+/// The For You tab: discounted games outside the wishlist that fit its tags.
+struct ForYouTab: View {
     @ObservedObject var store: Store
-    @AppStorage(SettingsKey.suggestionsExpanded) private var expanded = true
+    @State private var keyText = ""
+
+    /// Menus draw template images in the primary color whatever the style says, so the ✕ carries
+    /// its own grey to match the + beside it.
+    static let dismissIcon = icon("xmark.circle", "Dismiss")
+    static let watchIcon = icon("plus.circle", "Watch")
+
+    private static func icon(_ name: String, _ label: String) -> NSImage {
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular).applying(.init(paletteColors: [.secondaryLabelColor]))
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: label)!.withSymbolConfiguration(config)!
+        img.isTemplate = false
+        return img
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button { withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() } } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles").foregroundStyle(Color(ns: Theme.readable(Theme.accent)))
-                    Text("You might like").font(.callout.weight(.semibold))
-                    Text("\(store.visibleSuggestions.count)").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Discounted games that fit your wishlist").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if store.isSuggesting {
+                    ProgressView().controlSize(.mini)
+                } else if let at = store.suggestions?.fetchedAt {
+                    Text(Format.relative(at, now: store.now)).font(.caption2).foregroundStyle(.tertiary)
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("Discounted, well-reviewed games that share tags with your wishlist")
-            if expanded {
-                VStack(spacing: 2) {
-                    ForEach(store.visibleSuggestions.prefix(6)) { s in row(s) }
+            if !store.hasAPIKey { keyCard }
+            if store.visibleSuggestions.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.title2).foregroundStyle(.secondary)
+                    Text(store.isSuggesting ? "Looking for games you'd like…" : "No suggestions right now. They're checked twice a day.")
+                        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    if !store.isSuggesting {
+                        Button("Check Now") { Task { await store.refreshSuggestions(force: true) } }.controlSize(.small)
+                    }
                 }
+                .frame(maxWidth: .infinity).padding(14).card()
+                Spacer(minLength: 0)
+            } else {
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 2) {
+                        ForEach(store.visibleSuggestions) { s in row(s) }
+                    }
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Steam only shares owned games through the Web API, so offer the key right here.
+    private var keyCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Skip games you already own", systemImage: "key").font(.callout.weight(.medium))
+            Text("Steam only shares your library through a Web API key. It's free and takes a minute; it also unlocks playtime and friends online.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                SecureField("Paste your key", text: $keyText).textFieldStyle(.roundedBorder).controlSize(.small)
+                    .onSubmit { save() }
+                Button("Save") { save() }.controlSize(.small).disabled(keyText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            Button("Get a key at steamcommunity.com/dev/apikey") { NSWorkspace.shared.open(Links.apiKey) }
+                .buttonStyle(.link).font(.caption)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+
+    private func save() {
+        let k = keyText.trimmingCharacters(in: .whitespaces)
+        guard !k.isEmpty else { return }
+        store.saveAPIKey(k)
+        keyText = ""
     }
 
     private func row(_ s: Suggestion) -> some View {
@@ -630,12 +700,18 @@ struct SuggestionsSection: View {
                 .fixedSize()
             }
             VStack(spacing: 4) {
-                Button { store.watch(s.item, limitCents: nil) } label: { Image(systemName: "plus.circle") }
+                Button { store.watch(s.item, limitCents: nil) } label: { Image(nsImage: Self.watchIcon) }
+                    .buttonStyle(.borderless)
                     .help("Watch \(s.item.name)")
-                Button { store.dismissSuggestion(s.id) } label: { Image(systemName: "xmark.circle") }
-                    .help("Not interested")
+                Menu {
+                    Button("I Already Own This") { store.markOwned(s.id) }
+                    Button("Not Interested") { store.dismissSuggestion(s.id) }
+                } label: { Image(nsImage: Self.dismissIcon) }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Already own it, or not interested")
             }
-            .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8)
@@ -646,6 +722,8 @@ struct SuggestionsSection: View {
         .contextMenu {
             Button(SteamLink.opensInApp ? "Open in Steam" : "Open Store Page") { SteamLink.open(s.item.storeURL) }
             Button("Watch") { store.watch(s.item, limitCents: nil) }
+            Divider()
+            Button("I Already Own This") { store.markOwned(s.id) }
             Button("Not Interested") { store.dismissSuggestion(s.id) }
         }
     }
@@ -739,7 +817,8 @@ struct AddGamePanel: View {
             parts.append(item.isFree ? "Free or not for sale yet" : "No price")
         }
         if let limit, let cur = item.price?.currency { parts.append("limit \(Format.price(limit, currency: cur))") }
-        if store.isOnWishlist(item.appID) { parts.append("on wishlist") } else if watching { parts.append("watching") }
+        if store.isOwned(item.appID) { parts.append("you own this") }
+        else if store.isOnWishlist(item.appID) { parts.append("on wishlist") } else if watching { parts.append("watching") }
         return parts.joined(separator: " · ")
     }
 

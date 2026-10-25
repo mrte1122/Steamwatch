@@ -75,8 +75,9 @@ enum SettingsKey {
     static let quietStart = "quietStart"                  // hour, 0...23
     static let quietEnd = "quietEnd"                      // hour, 0...23
     static let showSuggestions = "showSuggestions"
-    static let suggestionsExpanded = "suggestionsExpanded" // popover disclosure state
     static let dismissedSuggestions = "dismissedSuggestions" // [Int] "Not interested"
+    static let ownedManual = "ownedManual"                // [Int] marked "I already own this"
+    static let popoverTab = "popoverTab"                  // "deals" or "forYou"
     static let lastUpdateCheck = "lastUpdateCheck"        // Date
     static let notifiedUpdateVersion = "notifiedUpdateVersion"
 
@@ -109,8 +110,9 @@ enum SettingsKey {
             quietStart: 22,
             quietEnd: 8,
             showSuggestions: true,
-            suggestionsExpanded: true,
             dismissedSuggestions: [Int](),
+            ownedManual: [Int](),
+            popoverTab: "deals",
         ])
     }
 }

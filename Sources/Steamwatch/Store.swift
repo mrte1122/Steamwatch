@@ -52,7 +52,9 @@ final class Store: ObservableObject {
     var steamID: String { UserDefaults.standard.string(forKey: SettingsKey.steamID) ?? "" }
     var apiKey: String? { Keychain.load(.apiKey) }
     var needsSetup: Bool { steamID.isEmpty && !Demo.isActive }
-    var hasAPIKey: Bool { Demo.isActive || !(apiKey ?? "").isEmpty }
+    var hasAPIKey: Bool { Demo.isActive ? !previewNoKey : !(apiKey ?? "").isEmpty }
+    /// Screenshots only: show demo mode as if no key were set.
+    var previewNoKey = false
     var hasData: Bool { lastUpdated != nil }
     var weekMinutes: Int { playtime.weekMinutes(now: now) }
     var twoWeekMinutes: Int { recentGames.reduce(0) { $0 + $1.minutesTwoWeeks } }
@@ -410,9 +412,30 @@ final class Store: ObservableObject {
     private var owned: Set<AppID>?
     private var tagNameCache: [Int: String] = [:]
 
-    /// What the popover shows: last results minus anything since watched, wishlisted or dismissed.
+    /// Games the user marked "I already own this"; works without an API key.
+    @Published private(set) var ownedManual: Set<AppID> = Set(UserDefaults.standard.array(forKey: SettingsKey.ownedManual) as? [Int] ?? [])
+
+    /// Owned per Steam (with a key) or per the user.
+    func isOwned(_ appID: AppID) -> Bool { ownedManual.contains(appID) || (owned?.contains(appID) ?? false) }
+
+    func markOwned(_ appID: AppID, _ yes: Bool = true) {
+        if yes { ownedManual.insert(appID) } else { ownedManual.remove(appID) }
+        if !Demo.isActive { UserDefaults.standard.set(Array(ownedManual).sorted(), forKey: SettingsKey.ownedManual) }
+    }
+
+    /// What the For You tab shows: last results minus anything since watched, wishlisted, owned or dismissed.
     var visibleSuggestions: [Suggestion] {
-        (suggestions?.suggestions ?? []).filter { !isWatching($0.id) && !dismissed.contains($0.id) }
+        (suggestions?.suggestions ?? []).filter { !isWatching($0.id) && !dismissed.contains($0.id) && !isOwned($0.id) }
+    }
+
+    /// Save a Web API key from anywhere in the UI, then pick up owned games, playtime and friends.
+    func saveAPIKey(_ key: String) {
+        Keychain.save(key.trimmingCharacters(in: .whitespacesAndNewlines), .apiKey)
+        owned = nil
+        Task {
+            await refresh(force: true)
+            await refreshSuggestions(force: true)
+        }
     }
 
     func tagNames(for s: Suggestion) -> [String] { suggestions?.names(for: s) ?? [] }
@@ -455,7 +478,7 @@ final class Store: ObservableObject {
         do {
             if owned == nil, hasAPIKey { owned = try? await client.ownedGames(steamID: steamID) }
             let candidates = try await client.discountedGames(withAnyTag: profile.top(4))
-            let exclude = Set(wishlist.map(\.appID)).union(watchlist.appIDs).union(dismissed).union(owned ?? [])
+            let exclude = Set(wishlist.map(\.appID)).union(watchlist.appIDs).union(dismissed).union(owned ?? []).union(ownedManual)
             let ranked = SuggestionEngine.rank(candidates, profile: profile, exclude: exclude)
             suggestionNote = "top tags \(profile.top(4)), \(candidates.count) candidates, \(exclude.count) excluded, \(ranked.count) kept"
             if tagNameCache.isEmpty { tagNameCache = (try? await client.tagNames()) ?? [:] }
@@ -621,6 +644,7 @@ final class Store: ObservableObject {
         lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count) · hidden: \(hidden.count) · targets: \(targets.cents.count)"
                      + (staleCount > 0 ? " · stale prices: \(staleCount)" : ""))
         if let until = rateLimitedUntil, until > Date() { lines.append("rate limited until: \(until)") }
+        lines.append("owned: \(owned.map { "\($0.count) from Steam" } ?? "unknown (no key)") · \(ownedManual.count) marked by hand")
         if let s = suggestions { lines.append("suggestions: \(visibleSuggestions.count) shown of \(s.suggestions.count), fetched \(s.fetchedAt)") }
         if let e = saleEvent { lines.append("sale event: since \(e.started), +\(e.extra(deals)) deals" + (e.ends.map { ", most end \($0)" } ?? "")) }
         for d in deals { lines.append("  \(d.item.name): \(Format.price(d.price.finalCents, currency: d.price.currency)) −\(d.price.discountPercent)%\(d.meetsTarget ? " TARGET" : "")\(d.isNewLow ? " LOW" : "")\(d.isFirstSale ? " FIRST" : "")") }
