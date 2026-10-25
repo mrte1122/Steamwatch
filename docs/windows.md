@@ -30,6 +30,7 @@ Everything below is in the core and needs no porting:
 | Search and filter chips | `DealEngine.filter`, `DealFilter` | pure function |
 | Sort orders | `DealSort` | pure function; rating sort weights by review count |
 | Sale-event detection and notification digest | `SaleEvent`, `NotificationPlan` | `sale-event.json`; pure functions |
+| Store search and the watchlist | `SteamClient.search`, `Watchlist` | `watchlist.json`; watched games join the wishlist as unranked entries |
 | Last good reading | `CachedState` | `cache.json` |
 | Price / hours / relative-time strings | `Format` | locale-aware via `NumberFormatter` |
 | Sample data | `DemoData` | for screenshots and tests |

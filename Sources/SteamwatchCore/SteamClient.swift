@@ -57,6 +57,7 @@ public struct SteamClient: Sendable {
     /// to build on Linux and Windows too), so each app sets this at launch.
     public static var version = "dev"
     public static let api = URL(string: "https://api.steampowered.com")!
+    public static let store = URL(string: "https://store.steampowered.com")!
     public static let assetBase = "https://shared.akamai.steamstatic.com/store_item_assets/"
 
     public var transport: HTTPTransport
@@ -130,6 +131,16 @@ public struct SteamClient: Sendable {
         return result
     }
 
+    /// Store search by name, for watching games that aren't on the wishlist. Returns apps only
+    /// (games, DLC, soundtracks), in Steam's relevance order. No key needed.
+    public func search(_ term: String) async throws -> [StoreItem] {
+        let q = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let r: StoreSearchResponse = try await get("api/storesearch/", [("term", q), ("l", language), ("cc", countryCode)],
+                                                    keyed: false, base: Self.store)
+        return (r.items ?? []).compactMap { StoreItem(search: $0) }
+    }
+
     // MARK: Player (key required)
 
     public func resolveVanity(_ name: String) async throws -> String {
@@ -189,14 +200,14 @@ public struct SteamClient: Sendable {
 
     // MARK: Plumbing
 
-    private func get<T: Decodable>(_ path: String, _ query: [(String, String)], keyed: Bool) async throws -> T {
+    private func get<T: Decodable>(_ path: String, _ query: [(String, String)], keyed: Bool, base: URL = SteamClient.api) async throws -> T {
         var items = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         if keyed {
             guard let apiKey, !apiKey.isEmpty else { throw SteamError.missingAPIKey }
             items.append(URLQueryItem(name: "key", value: apiKey))
         }
         items.append(URLQueryItem(name: "format", value: "json"))
-        var comps = URLComponents(url: Self.api.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        var comps = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         comps.queryItems = items
         let url = comps.url!
 
@@ -229,6 +240,34 @@ public struct SteamClient: Sendable {
             attempt += 1
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
         }
+    }
+}
+
+// MARK: - Store search wire format
+
+struct StoreSearchResponse: Decodable {
+    struct Item: Decodable {
+        struct P: Decodable { let currency: String?; let initial: Int?; let final: Int? }
+        let type: String?
+        let id: Int
+        let name: String
+        let price: P?
+        let tiny_image: String?
+    }
+    let items: [Item]?
+}
+
+extension StoreItem {
+    init?(search i: StoreSearchResponse.Item) {
+        guard i.type == nil || i.type == "app" else { return nil }
+        var price: Price?
+        if let p = i.price, let final = p.final {
+            let initial = max(p.initial ?? final, final)
+            let pct = initial > 0 ? Int((Double(initial - final) / Double(initial) * 100).rounded()) : 0
+            price = Price(currency: p.currency ?? "USD", finalCents: final, originalCents: initial, discountPercent: pct)
+        }
+        // A missing price is a free game, or one that isn't for sale yet.
+        self.init(appID: i.id, name: i.name, capsuleURL: i.tiny_image.flatMap(URL.init(string:)), price: price, isFree: i.price == nil)
     }
 }
 

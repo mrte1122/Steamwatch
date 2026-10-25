@@ -6,6 +6,8 @@ struct PopoverView: View {
     @ObservedObject var store: Store
     @ObservedObject var updater: Updater
     var openSettings: () -> Void
+    /// Screenshots only: open with the store-search panel showing this query.
+    var previewSearch: String?
 
     @AppStorage(SettingsKey.dealFilter) private var filterRaw = DealFilter.all.rawValue
     @AppStorage(SettingsKey.dealSort) private var sortRaw = DealSort.best.rawValue
@@ -13,6 +15,8 @@ struct PopoverView: View {
     @AppStorage(SettingsKey.showFriends) private var showFriends = true
     @State private var query = ""
     @State private var editingTarget: AppID?
+    /// The store-search panel replaces the deal list while open.
+    @State private var adding = false
 
     /// Rows visible before the list scrolls.
     private let visibleRows = 6
@@ -29,17 +33,22 @@ struct PopoverView: View {
             if store.needsSetup {
                 SetupCard(openSettings: openSettings)
             } else {
-                errorBanner
-                saleBanner
-                if store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
-                dealsSection
-                if showPlaytime { playtimeSection }
+                if adding {
+                    AddGamePanel(store: store, initialQuery: previewSearch ?? "") { adding = false }
+                } else {
+                    errorBanner
+                    saleBanner
+                    if store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
+                    dealsSection
+                    if showPlaytime { playtimeSection }
+                }
             }
             Divider()
             footer
         }
         .padding(14)
         .frame(width: 340)
+        .onAppear { if previewSearch != nil { adding = true } }
     }
 
     // MARK: Header
@@ -51,6 +60,10 @@ struct PopoverView: View {
                 Text(subtitle).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            Button { adding.toggle() } label: { Image(systemName: adding ? "xmark" : "plus") }
+                .buttonStyle(.borderless)
+                .help(adding ? "Back to deals" : "Watch any game on the Steam store")
+                .disabled(store.needsSetup)
             Button {
                 Task { await store.refresh(force: true) }
             } label: {
@@ -66,8 +79,8 @@ struct PopoverView: View {
         if store.needsSetup || !store.hasData { return "Steamwatch" }
         switch store.deals.count {
         case 0: return "Nothing on sale"
-        case 1: return "1 wishlist game on sale"
-        default: return "\(store.deals.count) wishlist games on sale"
+        case 1: return store.watchlist.count > 0 ? "1 game on sale" : "1 wishlist game on sale"
+        default: return "\(store.deals.count) \(store.watchlist.count > 0 ? "" : "wishlist ")games on sale"
         }
     }
 
@@ -76,6 +89,7 @@ struct PopoverView: View {
         var parts: [String] = []
         if let u = store.lastUpdated { parts.append("updated \(Format.relative(u, now: store.now))") }
         if store.wishlistCount > 0 { parts.append("\(store.wishlistCount) on wishlist") }
+        if store.watchlist.count > 0 { parts.append("\(store.watchlist.count) watched") }
         if store.hidden.count > 0 { parts.append("\(store.hidden.count) hidden") }
         if store.staleCount > 0 { parts.append("\(store.staleCount) stale") }
         return parts.isEmpty ? (store.isRefreshing ? "Checking the store…" : "Wishlist sale watcher") : parts.joined(separator: " · ")
@@ -250,7 +264,7 @@ struct PopoverView: View {
             ScrollView(.vertical) {
                 LazyVStack(spacing: 2) {
                     ForEach(shown) { deal in
-                        DealRow(deal: deal, now: store.now, sort: sort, editing: editingTarget == deal.id,
+                        DealRow(deal: deal, now: store.now, sort: sort, watched: store.watchlist.contains(deal.id), editing: editingTarget == deal.id,
                                 beginEdit: { editingTarget = deal.id },
                                 commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil },
                                 hide: { store.hide(deal.id) })
@@ -306,6 +320,8 @@ struct DealRow: View {
     let deal: Deal
     let now: Date
     var sort: DealSort = .best
+    /// Added through store search rather than the Steam wishlist.
+    var watched = false
     let editing: Bool
     let beginEdit: () -> Void
     let commit: (Int?) -> Void
@@ -338,15 +354,17 @@ struct DealRow: View {
             // so long names get the room.
             VStack(alignment: .trailing, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text("−\(deal.price.discountPercent)%")
+                    Text(deal.price.discountPercent > 0 ? "−\(deal.price.discountPercent)%" : "limit")
                         .font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(deal.meetsTarget ? Color(ns: Theme.highlight) : Color(ns: Theme.highlight).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
                         .foregroundStyle(deal.meetsTarget ? .white : accent)
                     Text(Format.price(deal.price.finalCents, currency: deal.price.currency)).font(.callout.weight(.medium)).monospacedDigit()
                 }
-                Text(Format.price(deal.price.originalCents, currency: deal.price.currency))
-                    .font(.caption2).strikethrough().foregroundStyle(.tertiary).monospacedDigit()
+                if deal.price.originalCents > deal.price.finalCents {
+                    Text(Format.price(deal.price.originalCents, currency: deal.price.currency))
+                        .font(.caption2).strikethrough().foregroundStyle(.tertiary).monospacedDigit()
+                }
             }
             .fixedSize()
         }
@@ -378,7 +396,8 @@ struct DealRow: View {
         if deal.isFirstSale { parts.append("first sale ever") }
         else if deal.isNewLow { parts.append("new low") }
         else if !deal.meetsTarget, let low = deal.lowestSeenCents, low < deal.price.finalCents { parts.append("low seen \(Format.price(low, currency: cur))") }
-        if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
+        if watched { parts.append("watching") }
+        else if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
         if let ends = deal.price.saleEnds { parts.append("ends \(Format.saleEnds(ends, now: now))") }
         // The review score leads when the list is sorted by it, so the order is legible; otherwise
         // it trails, where the row can afford to truncate it.
@@ -461,6 +480,100 @@ struct FriendsMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+}
+
+/// Store search for watching any game, with an optional price limit per result.
+struct AddGamePanel: View {
+    @ObservedObject var store: Store
+    var initialQuery = ""
+    let close: () -> Void
+    @State private var query = ""
+    @State private var limitFor: AppID?
+    @State private var limitText = ""
+    @FocusState private var searchFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
+                TextField("Search the Steam store", text: $query).textFieldStyle(.plain).font(.callout)
+                    .focused($searchFocused)
+                if store.isSearching { ProgressView().controlSize(.mini) }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .card()
+            Text("Watch any game, wishlisted or not. Set a limit to be notified the moment it's at or under that price.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let e = store.searchError {
+                Text(e).font(.caption).foregroundStyle(.secondary)
+            } else if query.trimmingCharacters(in: .whitespaces).count >= 2, !store.isSearching, store.searchResults.isEmpty {
+                Text("No games match.").font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(10).card()
+            }
+            if !store.searchResults.isEmpty {
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 2) {
+                        ForEach(store.searchResults.prefix(25)) { item in row(item) }
+                    }
+                }
+                .frame(maxHeight: 6 * DealRow.height + 10)
+                .fixedSize(horizontal: false, vertical: store.searchResults.count <= 6)
+            }
+        }
+        .onChange(of: query) { _, q in store.search(q) }
+        .onAppear {
+            searchFocused = true
+            if !initialQuery.isEmpty { query = initialQuery }
+        }
+    }
+
+    private func row(_ item: StoreItem) -> some View {
+        let watching = store.isWatching(item.appID)
+        let limit = store.targets[item.appID]
+        return HStack(spacing: 10) {
+            CapsuleArt(url: item.capsuleURL)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name).font(.callout.weight(.medium)).lineLimit(1)
+                Text(detail(item, watching: watching, limit: limit)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if limitFor == item.appID {
+                TextField("Limit", text: $limitText, prompt: Text("Limit"))
+                    .textFieldStyle(.roundedBorder).controlSize(.small).frame(width: 58)
+                    .onSubmit { commit(item) }
+                Button("Watch") { commit(item) }.controlSize(.small).buttonStyle(.borderedProminent)
+            } else {
+                Button(watching ? (limit == nil ? "Set limit" : "Edit") : "Watch") {
+                    limitText = limit.map { String(format: "%.2f", Double($0) / 100) } ?? ""
+                    limitFor = item.appID
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: DealRow.height)
+        .card()
+    }
+
+    private func detail(_ item: StoreItem, watching: Bool, limit: Int?) -> String {
+        var parts: [String] = []
+        if let p = item.price {
+            parts.append(Format.price(p.finalCents, currency: p.currency) + (p.isOnSale ? " (−\(p.discountPercent)%)" : ""))
+        } else {
+            parts.append(item.isFree ? "Free or not for sale yet" : "No price")
+        }
+        if let limit, let cur = item.price?.currency { parts.append("limit \(Format.price(limit, currency: cur))") }
+        if store.isOnWishlist(item.appID) { parts.append("on wishlist") } else if watching { parts.append("watching") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// An empty limit watches for sales only; a price that doesn't parse leaves the field open.
+    private func commit(_ item: StoreItem) {
+        let trimmed = limitText.trimmingCharacters(in: .whitespaces)
+        let cents = trimmed.isEmpty ? nil : Format.cents(parsing: trimmed)
+        if !trimmed.isEmpty, cents == nil { return }
+        store.watch(item, limitCents: cents)
+        limitFor = nil
     }
 }
 

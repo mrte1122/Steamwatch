@@ -34,6 +34,11 @@ Recent Homebrew versions only load casks from third-party taps you've trusted, h
    and friends online. Steam issues one to any account that has made a purchase. The key is stored in
    your Keychain and only ever sent to `api.steampowered.com`.
 
+To watch a game that isn't on your wishlist, press **+** in the popover, search the Steam store,
+and click **Watch**. You can give it a price limit; you're notified the moment it's at or under that
+price, whether through a sale or a permanent price cut. Watched games are checked on every
+refresh alongside your wishlist and listed in Settings → Watching.
+
 Click a game to open its store page. Right-click it to set a target price (or "Set Target to
 $X" for the current sale price) or to hide it once you've bought it; hidden games stay out of the
 list until they leave your wishlist. Settings lists every target and hidden game. With more than
@@ -79,6 +84,7 @@ Useful flags on the built binary:
 ```bash
 build/Steamwatch.app/Contents/MacOS/Steamwatch --once          # fetch once and print a summary
 build/Steamwatch.app/Contents/MacOS/Steamwatch --once --demo   # same with sample data
+build/Steamwatch.app/Contents/MacOS/Steamwatch --search "hades"   # the store search, printed
 build/Steamwatch.app/Contents/MacOS/Steamwatch --snapshot docs --demo   # README screenshots
 ```
 
@@ -119,7 +125,7 @@ docs/windows.md          what a Windows port needs
 ```
 
 Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
-`playtime.json`, `targets.json`, `hidden.json`, `sale-event.json`, `cache.json`). Preferences are in
+`playtime.json`, `targets.json`, `watchlist.json`, `hidden.json`, `sale-event.json`, `cache.json`). Preferences are in
 `io.github.mrte1122.Steamwatch`.
 
 ## Steam API usage
@@ -127,6 +133,7 @@ Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
 | Call | Key | Used for |
 | --- | --- | --- |
 | `IWishlistService/GetWishlist` | no | wishlist app IDs |
+| `store.steampowered.com/api/storesearch` | no | the + panel's store search |
 | `IStoreBrowseService/GetItems` | no | names, capsule art, prices, sale end dates, review summary, platforms (50 apps per request) |
 | `IPlayerService/GetRecentlyPlayedGames` | yes | playtime |
 | `ISteamUser/GetPlayerSummaries` | yes | your status, friends' status and current game |

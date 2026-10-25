@@ -16,6 +16,10 @@ final class Store: ObservableObject {
     /// Every wishlisted game the store knows about, for the Targets and Hidden lists in Settings.
     @Published private(set) var items: [AppID: StoreItem] = [:]
     private var wishlist: [WishlistEntry] = []
+    /// Games watched through store search, on top of the Steam wishlist.
+    @Published private(set) var watchlist = Watchlist()
+    /// Wishlist plus watched games: everything the store is checked for.
+    private var watched: [WishlistEntry] { wishlist + watchlist.asWishlistEntries(excluding: Set(wishlist.map(\.appID))) }
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var lastError: String?
     /// Problems with the keyed calls (playtime, friends) don't hide the deals, so they get their own line.
@@ -40,6 +44,7 @@ final class Store: ObservableObject {
     private let targetsFile = JSONFile<Targets>(url: directory.appendingPathComponent("targets.json"))
     private let hiddenFile = JSONFile<HiddenGames>(url: directory.appendingPathComponent("hidden.json"))
     private let saleEventFile = JSONFile<SaleEvent>(url: directory.appendingPathComponent("sale-event.json"))
+    private let watchlistFile = JSONFile<Watchlist>(url: directory.appendingPathComponent("watchlist.json"))
 
     var steamID: String { UserDefaults.standard.string(forKey: SettingsKey.steamID) ?? "" }
     var apiKey: String? { Keychain.load(.apiKey) }
@@ -62,6 +67,7 @@ final class Store: ObservableObject {
         targets = targetsFile.load() ?? Targets()
         hidden = hiddenFile.load() ?? HiddenGames()
         saleEvent = saleEventFile.load()
+        watchlist = watchlistFile.load() ?? Watchlist()
         if let cached = cacheFile.load() { apply(cached) }
         clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
@@ -95,7 +101,7 @@ final class Store: ObservableObject {
         lastUpdated = nil; lastError = nil; playerError = nil
         try? historyFile.save(history)
         try? playtimeFile.save(playtime)
-        try? hiddenFile.save(hidden)
+        if !Demo.isActive { try? hiddenFile.save(hidden) }
         UserDefaults.standard.set([String](), forKey: SettingsKey.sentAlerts)
         armed = false
         Task { await refresh(force: true) }
@@ -131,9 +137,10 @@ final class Store: ObservableObject {
 
         do {
             let wishlist = try await client.wishlist(steamID: id)
-            let ids = Set(wishlist.map(\.appID))
-            let fetched = wishlist.isEmpty ? SteamClient.StoreResult(items: [], missing: [], error: nil)
-                                           : await client.storeItems(partial: wishlist.map(\.appID))
+            let watched = wishlist + watchlist.asWishlistEntries(excluding: Set(wishlist.map(\.appID)))
+            let ids = Set(watched.map(\.appID))
+            let fetched = watched.isEmpty ? SteamClient.StoreResult(items: [], missing: [], error: nil)
+                                          : await client.storeItems(partial: watched.map(\.appID))
             // Fill gaps from the last reading so a game doesn't vanish because its batch failed.
             let carried = fetched.missing.compactMap { items[$0] }
             let merged = fetched.items + carried
@@ -141,8 +148,8 @@ final class Store: ObservableObject {
             failed = fetched.error
 
             hidden.prune(keeping: ids)
-            try? hiddenFile.save(hidden)
-            let fresh = DealEngine.deals(wishlist: wishlist, items: merged, history: history, targets: targets.byAppID, hidden: hidden.appIDs)
+            if !Demo.isActive { try? hiddenFile.save(hidden) }
+            let fresh = DealEngine.deals(wishlist: watched, items: merged, history: history, targets: targets.byAppID, hidden: hidden.appIDs)
             let at = Date()
             for item in fetched.items { history.observe(item, at: at) }
             history.prune(keeping: ids, now: at)
@@ -266,6 +273,7 @@ final class Store: ObservableObject {
     func previewSaleEvent() {
         saleEvent = SaleEvent(started: Date(), baselineCount: 2, ends: Date().addingTimeInterval(3 * 86_400 + 3600))
     }
+    func clearPreviewSaleEvent() { if Demo.isActive { saleEvent = nil } }
 
     private func notify(_ deals: [Deal]) {
         let d = UserDefaults.standard
@@ -295,47 +303,104 @@ final class Store: ObservableObject {
         items = Dictionary(cached.items.map { ($0.appID, $0) }, uniquingKeysWith: { a, _ in a })
         if !cached.wishlist.isEmpty {
             wishlistCount = cached.wishlist.count
-            deals = DealEngine.deals(wishlist: cached.wishlist, items: cached.items, history: history, targets: targets.byAppID, hidden: hidden.appIDs)
+            deals = DealEngine.deals(wishlist: watched, items: cached.items, history: history, targets: targets.byAppID, hidden: hidden.appIDs)
             lastUpdated = cached.fetchedAt
         }
     }
 
     // MARK: Targets and hiding
 
+    // MARK: Watching by search
+
+    @Published private(set) var searchResults: [StoreItem] = []
+    @Published private(set) var isSearching = false
+    @Published private(set) var searchError: String?
+    private var searchTask: Task<Void, Never>?
+
+    /// Debounced store search; a newer query cancels the one in flight.
+    func search(_ term: String) {
+        searchTask?.cancel()
+        let q = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else { searchResults = []; isSearching = false; searchError = nil; return }
+        if Demo.isActive {
+            searchResults = DemoData.items.filter { $0.name.range(of: q, options: .caseInsensitive) != nil }
+            return
+        }
+        isSearching = true
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, let self else { return }
+            do {
+                let found = try await self.client().search(q)
+                guard !Task.isCancelled else { return }
+                self.searchResults = found
+                self.searchError = nil
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.searchError = error.localizedDescription
+            }
+            self.isSearching = false
+        }
+    }
+
+    func isOnWishlist(_ appID: AppID) -> Bool { wishlist.contains { $0.appID == appID } }
+    func isWatching(_ appID: AppID) -> Bool { isOnWishlist(appID) || watchlist.contains(appID) }
+
+    /// Watch a game found by search, optionally with a price limit, and price-check it right away.
+    func watch(_ item: StoreItem, limitCents: Int?) {
+        if !isOnWishlist(item.appID) {
+            watchlist.add(item.appID, name: item.name)
+            if !Demo.isActive { try? watchlistFile.save(watchlist) }
+        }
+        items[item.appID] = items[item.appID] ?? item
+        if let limitCents { targets[item.appID] = limitCents; if !Demo.isActive { try? targetsFile.save(targets) } }
+        rerank()
+        Task { await refresh(force: true) }
+    }
+
+    /// Stop watching a searched-for game. Its limit goes too unless it's also on the wishlist.
+    func unwatch(_ appID: AppID) {
+        watchlist.remove(appID)
+        if !Demo.isActive { try? watchlistFile.save(watchlist) }
+        if !isOnWishlist(appID) { targets[appID] = nil; if !Demo.isActive { try? targetsFile.save(targets) } }
+        rerank()
+    }
+
     func setTarget(_ cents: Int?, for appID: AppID) {
         targets[appID] = cents
-        try? targetsFile.save(targets)
+        if !Demo.isActive { try? targetsFile.save(targets) }
         rerank()
     }
 
     func hide(_ appID: AppID) {
         if let d = deals.first(where: { $0.id == appID }) { hiddenDeals.append(d) }
         hidden.hide(appID)
-        try? hiddenFile.save(hidden)
+        if !Demo.isActive { try? hiddenFile.save(hidden) }
         rerank()
     }
 
     func unhide(_ appID: AppID) {
         hidden.unhide(appID)
-        try? hiddenFile.save(hidden)
+        if !Demo.isActive { try? hiddenFile.save(hidden) }
         rerank()
     }
 
     func unhideAll() {
         hidden = HiddenGames()
-        try? hiddenFile.save(hidden)
+        if !Demo.isActive { try? hiddenFile.save(hidden) }
         rerank()
     }
 
     /// Re-run the engine without a network round trip, over the last reading's wishlist and items.
     private func rerank() {
         if Demo.isActive {
-            deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history,
+            let extra = watchlist.asWishlistEntries(excluding: Set(DemoData.wishlist.map(\.appID)))
+            deals = DealEngine.deals(wishlist: DemoData.wishlist + extra, items: Array(items.values), history: DemoData.history,
                                      targets: targets.byAppID, hidden: hidden.appIDs)
             return
         }
-        guard !wishlist.isEmpty else { return }
-        deals = DealEngine.deals(wishlist: wishlist, items: Array(items.values), history: historyWithoutCurrent(), targets: targets.byAppID,
+        guard !watched.isEmpty else { return }
+        deals = DealEngine.deals(wishlist: watched, items: Array(items.values), history: historyWithoutCurrent(), targets: targets.byAppID,
                                  hidden: hidden.appIDs)
     }
 
@@ -377,6 +442,7 @@ final class Store: ObservableObject {
     func diagnosticsText() -> String {
         var lines = ["Steamwatch \(SteamClient.version)", "steamID: \(steamID.isEmpty ? "(not set)" : steamID)", "api key: \(hasAPIKey ? "set" : "none")"]
         if let u = lastUpdated { lines.append("updated: \(u)") }
+        lines.append("watching: \(watchlist.count) beyond the wishlist")
         lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count) · hidden: \(hidden.count) · targets: \(targets.cents.count)"
                      + (staleCount > 0 ? " · stale prices: \(staleCount)" : ""))
         if let until = rateLimitedUntil, until > Date() { lines.append("rate limited until: \(until)") }

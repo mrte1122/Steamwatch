@@ -184,6 +184,71 @@ final class SaleDigestTests: XCTestCase {
     }
 }
 
+final class WatchlistTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
+    func testWatchedGamesJoinTheDealsAndPriceCutsHitTargets() {
+        var watch = Watchlist()
+        watch.add(367520, name: "Hollow Knight")
+        watch.add(1030300, name: "Hollow Knight: Silksong")   // already wishlisted: not duplicated
+        let wishIDs = Set(DemoData.wishlist.map(\.appID))
+        let extra = watch.asWishlistEntries(excluding: wishIDs)
+        XCTAssertEqual(extra.map(\.appID), [367520])
+
+        // Full price, no discount, but the regular price is now under the limit.
+        let cut = StoreItem(appID: 367520, name: "Hollow Knight", capsuleURL: nil,
+                            price: Price(currency: "USD", finalCents: 999, originalCents: 999, discountPercent: 0))
+        var targets = DemoData.targets
+        targets[367520] = 1000
+        let deals = DealEngine.deals(wishlist: DemoData.wishlist + extra, items: DemoData.items + [cut],
+                                     history: DemoData.history, targets: targets.byAppID)
+        let hk = deals.first { $0.id == 367520 }
+        XCTAssertNotNil(hk, "a price cut to the limit counts")
+        XCTAssertEqual(hk?.meetsTarget, true)
+        XCTAssertEqual(DealAlert(kind: .target, deal: hk!).body, "$9.99, a new regular price")
+
+        targets[367520] = 900
+        XCTAssertNil(DealEngine.deals(wishlist: extra, items: [cut], history: PriceHistory(), targets: targets.byAppID).first,
+                     "above the limit and not discounted: not a deal")
+
+        watch.remove(367520)
+        XCTAssertEqual(watch.appIDs, [1030300])
+    }
+
+    func testDecodesStoreSearch() throws {
+        let json = """
+        {"total":3,"items":[
+          {"type":"app","name":"Hollow Knight","id":367520,"price":{"currency":"USD","initial":1499,"final":749},"tiny_image":"https://x/capsule.jpg"},
+          {"type":"app","name":"Counter-Strike 2","id":730,"tiny_image":"https://x/cs2.jpg"},
+          {"type":"sub","name":"Bundle","id":1,"price":{"currency":"USD","initial":100,"final":50}}
+        ]}
+        """
+        let r = try JSONDecoder().decode(StoreSearchResponse.self, from: Data(json.utf8))
+        let items = (r.items ?? []).compactMap { StoreItem(search: $0) }
+        XCTAssertEqual(items.map(\.appID), [367520, 730], "packages are skipped")
+        XCTAssertEqual(items[0].price, Price(currency: "USD", finalCents: 749, originalCents: 1499, discountPercent: 50))
+        XCTAssertTrue(items[1].isFree)
+        XCTAssertNil(items[1].price)
+    }
+
+    func testSearchHitsTheStoreHost() async throws {
+        final class Capture: HTTPTransport, @unchecked Sendable {
+            var url: URL?
+            func get(_ url: URL) async throws -> (Data, Int) { self.url = url; return (Data(#"{"total":0,"items":[]}"#.utf8), 200) }
+        }
+        let t = Capture()
+        let none = try await SteamClient(transport: t, countryCode: "GB").search("  hades ")
+        XCTAssertTrue(none.isEmpty)
+        let comps = URLComponents(url: t.url!, resolvingAgainstBaseURL: false)!
+        XCTAssertEqual(comps.host, "store.steampowered.com")
+        XCTAssertEqual(comps.path, "/api/storesearch/")
+        XCTAssertEqual(comps.queryItems?.first { $0.name == "term" }?.value, "hades")
+        XCTAssertEqual(comps.queryItems?.first { $0.name == "cc" }?.value, "GB")
+        let blank = try await SteamClient(transport: t).search("   ")
+        XCTAssertTrue(blank.isEmpty)
+    }
+}
+
 final class PriceHistoryTests: XCTestCase {
     override func setUp() { super.setUp(); _ = pinLocale }
 

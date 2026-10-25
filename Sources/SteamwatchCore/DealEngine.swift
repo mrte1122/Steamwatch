@@ -22,7 +22,8 @@ public struct DealAlert: Equatable, Sendable, Identifiable {
 
     public var body: String {
         let price = Format.price(deal.price.finalCents, currency: deal.price.currency)
-        var s = "\(price) (−\(deal.price.discountPercent)%)"
+        // A target hit can come from a permanent price cut, with no discount to show.
+        var s = deal.price.discountPercent > 0 ? "\(price) (−\(deal.price.discountPercent)%)" : "\(price), a new regular price"
         if kind == .target || kind == .newLow, deal.isLowestSeen, deal.lowestSeenCents != nil { s += ", the lowest it's been" }
         if let ends = deal.price.saleEnds { s += " · ends \(Format.saleEnds(ends))" }
         return s
@@ -37,7 +38,8 @@ public enum DealEngine {
         let priorities = Dictionary(wishlist.map { ($0.appID, $0.priority) }, uniquingKeysWith: { a, _ in a })
         var deals: [Deal] = []
         for item in items where priorities[item.appID] != nil && !hidden.contains(item.appID) {
-            guard let price = item.price, price.isOnSale else { continue }
+            // On sale, or at/under the user's limit through a permanent price cut.
+            guard let price = item.price, price.isOnSale || targets[item.appID].map({ price.finalCents <= $0 }) == true else { continue }
             let past = history.record(item.appID)
             deals.append(Deal(item: item, price: price, lowestSeenCents: past?.lowestCents, targetCents: targets[item.appID],
                               isFirstSale: past.map { !$0.seenOnSale } ?? false, priority: priorities[item.appID] ?? 0))

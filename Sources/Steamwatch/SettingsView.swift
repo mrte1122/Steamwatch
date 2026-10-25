@@ -101,7 +101,7 @@ struct SettingsView: View {
                 Text("Right-click a game in the popover to set its target price.").font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("Target prices") {
+            Section("Price limits") {
                 if store.targets.cents.isEmpty {
                     Text("No targets yet. Right-click a deal in the popover and choose “Set Target…”.").font(.caption).foregroundStyle(.secondary)
                 } else {
@@ -115,6 +115,25 @@ struct SettingsView: View {
                             Text(Format.price(cents, currency: currency(appID))).monospacedDigit()
                             Button { store.setTarget(nil, for: appID) } label: { Image(systemName: "xmark.circle") }
                                 .buttonStyle(.borderless).help("Remove target")
+                        }
+                    }
+                }
+            }
+
+            Section("Watching (not on your wishlist)") {
+                if store.watchlist.count == 0 {
+                    Text("Press + in the popover to search the Steam store and watch any game, with an optional price limit.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.watchlist.appIDs.sorted { watchName($0) < watchName($1) }, id: \.self) { appID in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(watchName(appID)).lineLimit(1)
+                                Text(currentPrice(appID) + (store.targets[appID].map { " · limit \(Format.price($0, currency: currency(appID)))" } ?? ""))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Stop watching") { store.unwatch(appID) }.controlSize(.small)
                         }
                     }
                 }
@@ -177,6 +196,7 @@ struct SettingsView: View {
     }
 
     private func name(_ appID: AppID) -> String { store.items[appID]?.name ?? "App \(appID)" }
+    private func watchName(_ appID: AppID) -> String { store.items[appID]?.name ?? store.watchlist.name(appID) ?? "App \(appID)" }
     private func currency(_ appID: AppID) -> String { store.items[appID]?.price?.currency ?? "USD" }
     private func currentPrice(_ appID: AppID) -> String {
         guard let p = store.items[appID]?.price else { return "Price unknown" }

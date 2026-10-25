@@ -64,6 +64,37 @@ public struct HiddenGames: Codable, Equatable, Sendable {
     }
 }
 
+/// Games watched without being on the Steam wishlist, added through store search. Keyed by appID
+/// as a string; the name is kept so Settings can list a game before its first store reading.
+public struct Watchlist: Codable, Equatable, Sendable {
+    public struct Entry: Codable, Equatable, Sendable {
+        public var name: String
+        public var added: Date
+        public init(name: String, added: Date) { self.name = name; self.added = added }
+    }
+
+    public var entries: [String: Entry]
+    public init(entries: [String: Entry] = [:]) { self.entries = entries }
+
+    public var appIDs: Set<AppID> { Set(entries.keys.compactMap(Int.init)) }
+    public var count: Int { entries.count }
+    public func contains(_ appID: AppID) -> Bool { entries[String(appID)] != nil }
+    public func name(_ appID: AppID) -> String? { entries[String(appID)]?.name }
+
+    public mutating func add(_ appID: AppID, name: String, at now: Date = Date()) {
+        if entries[String(appID)] == nil { entries[String(appID)] = Entry(name: name, added: now) }
+    }
+    public mutating func remove(_ appID: AppID) { entries[String(appID)] = nil }
+
+    /// Watched games as wishlist-shaped entries (unranked), so the deal engine treats both alike.
+    public func asWishlistEntries(excluding wishlisted: Set<AppID> = []) -> [WishlistEntry] {
+        entries.compactMap { key, e in
+            guard let id = Int(key), !wishlisted.contains(id) else { return nil }
+            return WishlistEntry(appID: id, priority: 0, added: e.added)
+        }
+    }
+}
+
 /// Target prices, keyed by appID as a string.
 public struct Targets: Codable, Equatable, Sendable {
     public var cents: [String: Int]

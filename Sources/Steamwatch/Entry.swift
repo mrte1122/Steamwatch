@@ -12,6 +12,7 @@ enum Entry {
 
         if args.contains("--selftest") { exit(SelfTest.run()) }
         if args.contains("--once") { runOnce() }
+        if let i = args.firstIndex(of: "--search"), i + 1 < args.count { runSearch(args[i + 1]) }
         if args.contains("--check-update") || args.contains("--update") {
             runUpdate(install: args.contains("--update"))
         }
@@ -40,6 +41,27 @@ enum Entry {
 }
 
 extension Entry {
+    /// `--search <term>`: the store search behind the popover's + panel, printed.
+    @MainActor
+    static func runSearch(_ term: String) -> Never {
+        Task { @MainActor in
+            do {
+                let found = try await Store().client().search(term)
+                for item in found.prefix(10) {
+                    let price = item.price.map { Format.price($0.finalCents, currency: $0.currency) + ($0.isOnSale ? " −\($0.discountPercent)%" : "") } ?? "no price"
+                    print("\(item.appID)\t\(item.name)\t\(price)")
+                }
+                print("\(found.count) result(s)")
+                exit(0)
+            } catch {
+                print("error:", error.localizedDescription)
+                exit(1)
+            }
+        }
+        RunLoop.main.run()
+        exit(0)
+    }
+
     /// `--check-update` reports the latest release; `--update` also installs it (no relaunch).
     @MainActor
     static func runUpdate(install: Bool) -> Never {
