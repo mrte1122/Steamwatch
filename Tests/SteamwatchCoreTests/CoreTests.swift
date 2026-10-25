@@ -121,6 +121,69 @@ final class DealSortTests: XCTestCase {
     }
 }
 
+final class SaleDigestTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func deal(_ id: AppID, pct: Int = 50, endsIn days: Double? = 3, target: Int? = nil, first: Bool = false, low: Int? = nil) -> Deal {
+        Deal(item: StoreItem(appID: id, name: "Game \(id)", capsuleURL: nil, price: nil),
+             price: Price(currency: "USD", finalCents: 1000, originalCents: 2000, discountPercent: pct,
+                          saleEnds: days.map { now.addingTimeInterval($0 * 86_400 + Double(id % 3) * 3600) }),
+             lowestSeenCents: low, targetCents: target, isFirstSale: first)
+    }
+
+    func testEventStartsOnAJumpNotOnFirstRun() {
+        let before = Set((1...10).map { $0 })
+        let deals = (1...60).map { deal($0) }
+        XCTAssertNil(SaleEvent.evaluate(nil, previousIDs: [], deals: deals, wishlistCount: 400, now: now), "first run is a baseline")
+        XCTAssertNil(SaleEvent.evaluate(nil, previousIDs: before, deals: (1...20).map { deal($0) }, wishlistCount: 400, now: now),
+                     "10 new is under the 20 threshold for 400 games")
+        let event = SaleEvent.evaluate(nil, previousIDs: before, deals: deals, wishlistCount: 400, now: now)
+        XCTAssertEqual(event?.baselineCount, 10)
+        XCTAssertEqual(event?.extra(deals), 50)
+        XCTAssertNotNil(event?.ends)
+        XCTAssertEqual(event!.ends!.timeIntervalSince(now), 3 * 86_400 + 2 * 3600, accuracy: 1, "latest hour on the common day")
+    }
+
+    func testEventContinuesThenEnds() {
+        let event = SaleEvent(started: now, baselineCount: 10, ends: now.addingTimeInterval(3 * 86_400))
+        XCTAssertNotNil(SaleEvent.evaluate(event, previousIDs: [], deals: (1...40).map { deal($0) }, wishlistCount: 400, now: now))
+        XCTAssertNil(SaleEvent.evaluate(event, previousIDs: [], deals: (1...15).map { deal($0) }, wishlistCount: 400, now: now),
+                     "back near the baseline")
+        XCTAssertNil(SaleEvent.evaluate(event, previousIDs: [], deals: (1...40).map { deal($0, endsIn: nil) }, wishlistCount: 400,
+                                        now: now.addingTimeInterval(4 * 86_400)), "past the clustered end")
+    }
+
+    func testPlanKeepsTargetsAndDigestsTheRest() {
+        let alerts = [DealAlert(kind: .target, deal: deal(1, target: 2000)), DealAlert(kind: .target, deal: deal(2, target: 2000)),
+                      DealAlert(kind: .newLow, deal: deal(3, low: 1500)), DealAlert(kind: .firstSale, deal: deal(4, first: true))]
+        let quiet = NotificationPlan.plan(alerts, totalOnSale: 20, event: nil)
+        XCTAssertEqual(quiet.individual.count, 4, "a few alerts post one by one")
+        XCTAssertNil(quiet.digest)
+
+        let many = alerts + (5...12).map { DealAlert(kind: .newLow, deal: deal($0, low: 1500)) }
+        let busy = NotificationPlan.plan(many, totalOnSale: 40, event: nil)
+        XCTAssertEqual(busy.individual.map(\.kind), [.target, .target])
+        XCTAssertEqual(busy.digest?.alerts.count, 10)
+        XCTAssertEqual(busy.digest?.title, "10 wishlist games dropped in price")
+        XCTAssertTrue(busy.digest!.body.hasPrefix("1 first sales · 9 new lows\nGame 3 −50%, Game 4 −50%"))
+
+        let event = SaleEvent(started: now, baselineCount: 10, ends: Date().addingTimeInterval(3 * 86_400 + 60))
+        let sale = NotificationPlan.plan(Array(alerts.prefix(3)), totalOnSale: 120, event: event)
+        XCTAssertEqual(sale.individual.count, 2, "during a sale even one non-target alert goes in the digest")
+        XCTAssertEqual(sale.digest?.title, "Steam sale: 120 wishlist games on sale")
+        XCTAssertTrue(sale.digest!.body.hasPrefix("1 new lows · most end in 3d"))
+
+        let lotsOfTargets = (1...5).map { DealAlert(kind: .target, deal: deal($0, target: 2000)) }
+        let capped = NotificationPlan.plan(lotsOfTargets, totalOnSale: 5, event: nil)
+        XCTAssertEqual(capped.individual.count, 5, "overflow targets under the digest threshold still post")
+        let capped2 = NotificationPlan.plan((1...8).map { DealAlert(kind: .target, deal: deal($0, target: 2000)) }, totalOnSale: 8, event: nil)
+        XCTAssertEqual(capped2.individual.count, 3)
+        XCTAssertEqual(capped2.digest?.body.hasPrefix("5 under target"), true)
+    }
+}
+
 final class PriceHistoryTests: XCTestCase {
     override func setUp() { super.setUp(); _ = pinLocale }
 

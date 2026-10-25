@@ -25,9 +25,10 @@ enum Snapshot {
             d.set(savedMode, forKey: SettingsKey.menuBarMode); d.set(savedMono, forKey: SettingsKey.monochrome)
 
             let savedFilter = d.object(forKey: SettingsKey.dealFilter), savedSort = d.object(forKey: SettingsKey.dealSort)
-            for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating")] {
+            for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating"), ("sale-light", .aqua, "all", "best")] {
                 d.set(filter, forKey: SettingsKey.dealFilter)
                 d.set(sort, forKey: SettingsKey.dealSort)
+                if name == "sale-light" { store.previewSaleEvent() }
                 let view = PopoverView(store: store, updater: Updater(), openSettings: {})
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 12))

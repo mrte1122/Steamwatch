@@ -39,6 +39,7 @@ final class Store: ObservableObject {
     private let playtimeFile = JSONFile<PlaytimeLog>(url: directory.appendingPathComponent("playtime.json"))
     private let targetsFile = JSONFile<Targets>(url: directory.appendingPathComponent("targets.json"))
     private let hiddenFile = JSONFile<HiddenGames>(url: directory.appendingPathComponent("hidden.json"))
+    private let saleEventFile = JSONFile<SaleEvent>(url: directory.appendingPathComponent("sale-event.json"))
 
     var steamID: String { UserDefaults.standard.string(forKey: SettingsKey.steamID) ?? "" }
     var apiKey: String? { Keychain.load(.apiKey) }
@@ -60,6 +61,7 @@ final class Store: ObservableObject {
         playtime = playtimeFile.load() ?? PlaytimeLog()
         targets = targetsFile.load() ?? Targets()
         hidden = hiddenFile.load() ?? HiddenGames()
+        saleEvent = saleEventFile.load()
         if let cached = cacheFile.load() { apply(cached) }
         clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
@@ -87,6 +89,8 @@ final class Store: ObservableObject {
         history = PriceHistory()
         playtime = PlaytimeLog()
         hidden = HiddenGames()
+        saleEvent = nil
+        try? FileManager.default.removeItem(at: saleEventFile.url)
         deals = []; recentGames = []; me = nil; friendsOnline = []; wishlistCount = 0; items = [:]; wishlist = []
         lastUpdated = nil; lastError = nil; playerError = nil
         try? historyFile.save(history)
@@ -143,7 +147,9 @@ final class Store: ObservableObject {
             for item in fetched.items { history.observe(item, at: at) }
             history.prune(keeping: ids, now: at)
             try? historyFile.save(history)
+            let previousIDs = Set(deals.map(\.id))
             deals = fresh
+            updateSaleEvent(previousIDs: previousIDs, wishlistCount: wishlist.count)
             self.wishlist = wishlist
             items = Dictionary(merged.map { ($0.appID, $0) }, uniquingKeysWith: { a, _ in a })
             wishlistCount = wishlist.count
@@ -221,6 +227,8 @@ final class Store: ObservableObject {
     @Published private(set) var rateLimitedUntil: Date?
     /// Games whose prices came from the previous reading because their batch failed.
     @Published private(set) var staleCount = 0
+    /// A storewide sale inferred from a jump in discounted wishlist games; drives the banner and digest.
+    @Published private(set) var saleEvent: SaleEvent?
     private var retryTimer: Timer?
     private var consecutiveFailures = 0
 
@@ -247,6 +255,18 @@ final class Store: ObservableObject {
         }
     }
 
+    private func updateSaleEvent(previousIDs: Set<AppID>, wishlistCount: Int) {
+        let next = SaleEvent.evaluate(saleEvent, previousIDs: previousIDs, deals: deals, wishlistCount: wishlistCount)
+        guard next != saleEvent else { return }
+        saleEvent = next
+        if let next { try? saleEventFile.save(next) } else { try? FileManager.default.removeItem(at: saleEventFile.url) }
+    }
+
+    /// For screenshots: pretend a sale started with only two games discounted beforehand.
+    func previewSaleEvent() {
+        saleEvent = SaleEvent(started: Date(), baselineCount: 2, ends: Date().addingTimeInterval(3 * 86_400 + 3600))
+    }
+
     private func notify(_ deals: [Deal]) {
         let d = UserDefaults.standard
         var sent = Set(d.stringArray(forKey: SettingsKey.sentAlerts) ?? [])
@@ -254,7 +274,12 @@ final class Store: ObservableObject {
                                        firstSale: d.bool(forKey: SettingsKey.notifyFirstSale), anySale: d.bool(forKey: SettingsKey.notifyAnySale))
         let alerts = d.bool(forKey: SettingsKey.notificationsEnabled)
             ? DealEngine.alerts(for: deals, alreadySent: sent, policy: policy, armed: armed) : []
-        for a in alerts { notifier.post(a) }
+        // Target hits post on their own; a burst of other alerts, or any during a big sale, becomes one digest.
+        let plan = NotificationPlan.plan(alerts, totalOnSale: deals.count, event: saleEvent)
+        for a in plan.individual { notifier.post(a) }
+        if let digest = plan.digest {
+            notifier.post(title: digest.title, body: digest.body, url: Links.wishlist, id: "digest-\(Int(Date().timeIntervalSince1970))")
+        }
         // Everything on sale right now counts as announced, so a sale is never reported twice.
         sent.formUnion(DealEngine.keys(for: deals))
         d.set(Array(sent.sorted().suffix(1000)), forKey: SettingsKey.sentAlerts)
@@ -355,6 +380,7 @@ final class Store: ObservableObject {
         lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count) · hidden: \(hidden.count) · targets: \(targets.cents.count)"
                      + (staleCount > 0 ? " · stale prices: \(staleCount)" : ""))
         if let until = rateLimitedUntil, until > Date() { lines.append("rate limited until: \(until)") }
+        if let e = saleEvent { lines.append("sale event: since \(e.started), +\(e.extra(deals)) deals" + (e.ends.map { ", most end \($0)" } ?? "")) }
         for d in deals { lines.append("  \(d.item.name): \(Format.price(d.price.finalCents, currency: d.price.currency)) −\(d.price.discountPercent)%\(d.meetsTarget ? " TARGET" : "")\(d.isNewLow ? " LOW" : "")\(d.isFirstSale ? " FIRST" : "")") }
         lines.append("played 2 wk: \(Format.hours(twoWeekMinutes)) · friends online: \(friendsOnline.count)")
         if let e = lastError { lines.append("error: \(e)") }

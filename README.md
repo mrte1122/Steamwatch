@@ -53,6 +53,14 @@ little for games with under 500 reviews; "Deck" means Verified or Playable.
   is the discount percent plus a boost for games you ranked near the top of your wishlist (+60 for
   #1, two less per rank, nothing past #30), so a −30% on a top-five game outranks a −90% on
   something you added years ago. Rank your wishlist on Steam to steer it.
+- **Big Steam sales** have no name in Steam's API, so Steamwatch infers one: when at least 1 in 20
+  of your wishlisted games (minimum 8) goes on sale in a single refresh, the popover shows a "Big
+  Steam sale" banner with how many extra games are discounted and when most of the discounts end.
+  The banner clears once the count falls back near where it was.
+- **Notifications** for target prices always post one by one (up to three per refresh). Other
+  alerts (new lows, first sales) post individually only when there are a few; a burst of four or
+  more, or any during a big sale, becomes a single digest like "Steam sale: 312 wishlist games on
+  sale · 4 under target · 37 first sales · most end in 6d".
 - **Played this week** samples Steam's "last two weeks" counter on every refresh and attributes
   each increase to the day it was noticed, so the daily bars fill in while the app is running.
   Until there is a week of samples it also shows the raw two-week total.
@@ -111,7 +119,7 @@ docs/windows.md          what a Windows port needs
 ```
 
 Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
-`playtime.json`, `targets.json`, `hidden.json`, `cache.json`). Preferences are in
+`playtime.json`, `targets.json`, `hidden.json`, `sale-event.json`, `cache.json`). Preferences are in
 `io.github.mrte1122.Steamwatch`.
 
 ## Steam API usage

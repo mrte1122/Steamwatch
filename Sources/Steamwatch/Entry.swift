@@ -87,6 +87,8 @@ enum SelfTest {
         store.loadDemo()
         let image = MenuBarIconRenderer.render(store: store)
         check(image.size.width > 14 && image.size.height == MenuBarIconRenderer.height, "menu bar image renders (\(Int(image.size.width))pt)")
+        let burst = deals.map { DealAlert(kind: .newLow, deal: $0) }
+        check(NotificationPlan.plan(burst, totalOnSale: deals.count, event: nil).digest?.alerts.count == 7, "a burst of alerts becomes one digest")
         check(Updater.isVersion("0.10.0", newerThan: "0.9.9") && !Updater.isVersion("0.1.0", newerThan: "0.1.0"), "version comparison")
         let payload = Data("steamwatch".utf8)
         check((try? Updater.verify(payload, signature: Data("AAAA".utf8))) == nil, "updater rejects a bad signature")

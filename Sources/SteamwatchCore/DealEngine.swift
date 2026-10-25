@@ -6,6 +6,8 @@ public struct DealAlert: Equatable, Sendable, Identifiable {
 
     public let kind: Kind
     public let deal: Deal
+
+    public init(kind: Kind, deal: Deal) { self.kind = kind; self.deal = deal }
     public var id: String { key }
     public var key: String { "\(deal.item.appID)-\(deal.price.finalCents)" }
 

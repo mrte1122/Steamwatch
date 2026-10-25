@@ -30,6 +30,7 @@ struct PopoverView: View {
                 SetupCard(openSettings: openSettings)
             } else {
                 errorBanner
+                saleBanner
                 if store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
                 dealsSection
                 if showPlaytime { playtimeSection }
@@ -147,6 +148,25 @@ struct PopoverView: View {
             .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
         default:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder private var saleBanner: some View {
+        if let event = store.saleEvent {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles").foregroundStyle(Color(ns: Theme.readable(Theme.highlight)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Big Steam sale").font(.callout.weight(.semibold))
+                    Text("+\(event.extra(store.deals)) wishlist games discounted since it began")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let ends = event.ends {
+                    Text("ends \(Format.saleEnds(ends, now: store.now))").font(.caption.weight(.medium)).monospacedDigit()
+                }
+            }
+            .padding(8)
+            .card(tint: Color(ns: Theme.highlight))
         }
     }
 
