@@ -53,7 +53,9 @@ public struct URLSessionTransport: HTTPTransport {
 ///  - IWishlistService and IStoreBrowseService (no key; public profiles only)
 ///  - IPlayerService / ISteamUser (need the user's Web API key)
 public struct SteamClient: Sendable {
-    public static let version = "0.1.0"
+    /// The app's version, for the User-Agent and diagnostics. The core can't read a bundle (it has
+    /// to build on Linux and Windows too), so each app sets this at launch.
+    public static var version = "dev"
     public static let api = URL(string: "https://api.steampowered.com")!
     public static let assetBase = "https://shared.akamai.steamstatic.com/store_item_assets/"
 

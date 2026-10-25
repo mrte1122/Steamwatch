@@ -7,6 +7,7 @@ enum Entry {
     static func main() {
         setvbuf(stdout, nil, _IOLBF, 0)   // line-buffered, so CLI modes print immediately even when piped
         SettingsKey.registerDefaults()
+        SteamClient.version = Updater.currentVersion
         let args = CommandLine.arguments
 
         if args.contains("--selftest") { exit(SelfTest.run()) }
