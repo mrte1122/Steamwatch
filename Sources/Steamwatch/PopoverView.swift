@@ -157,7 +157,7 @@ struct PopoverView: View {
                 Image(systemName: "sparkles").foregroundStyle(Color(ns: Theme.readable(Theme.highlight)))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Big Steam sale").font(.callout.weight(.semibold))
-                    Text("+\(event.extra(store.deals)) wishlist games discounted since it began")
+                    Text("+\(event.extra(store.deals)) games discounted since it began")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
