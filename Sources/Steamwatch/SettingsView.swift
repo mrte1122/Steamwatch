@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: Store
     @ObservedObject var updater: Updater
+    /// Which tab opens first; screenshots set it.
+    var initialTab = "general"
+    @State private var tab = "general"
     @AppStorage(SettingsKey.autoUpdateCheck) private var autoUpdate = true
     @AppStorage(SettingsKey.openInSteam) private var openInSteam = true
 
@@ -26,6 +29,9 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.ruleMinDiscount) private var ruleMinDiscount = 75
     @AppStorage(SettingsKey.ruleMinRating) private var ruleMinRating = 85
     @AppStorage(SettingsKey.ruleMaxPrice) private var ruleMaxPrice = 0
+    @AppStorage(SettingsKey.quietEnabled) private var quietEnabled = false
+    @AppStorage(SettingsKey.quietStart) private var quietStart = 22
+    @AppStorage(SettingsKey.quietEnd) private var quietEnd = 8
 
     @State private var apiKey = Keychain.load(.apiKey) ?? ""
     @State private var profileStatus: String?
@@ -33,6 +39,18 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
+        TabView(selection: $tab) {
+            general.tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+            notifications.tabItem { Label("Notifications", systemImage: "bell") }.tag("notifications")
+            games.tabItem { Label("Games", systemImage: "gamecontroller") }.tag("games")
+            about.tabItem { Label("About", systemImage: "info.circle") }.tag("about")
+        }
+        .padding(16)
+        .frame(width: 500, height: 520)
+        .onAppear { tab = initialTab }
+    }
+
+    private var general: some View {
         Form {
             Section("Steam account") {
                 ForEach(store.localAccounts.filter { $0.steamID != steamID }) { account in
@@ -48,12 +66,14 @@ struct SettingsView: View {
                     }
                 }
                 HStack {
-                    TextField("Profile URL or SteamID64", text: $profileInput, prompt: Text("https://steamcommunity.com/id/yourname"))
+                    TextField("Profile URL or SteamID64", text: Demo.isActive ? .constant(DemoData.me.profileURL.absoluteString) : $profileInput, prompt: Text("https://steamcommunity.com/id/yourname"))
                         .onSubmit { Task { await connect() } }
                     Button(resolving ? "Checking…" : "Connect") { Task { await connect() } }.disabled(resolving || profileInput.isEmpty)
                 }
                 if let s = profileStatus {
                     Text(s).font(.caption).foregroundStyle(.secondary)
+                } else if Demo.isActive {
+                    Text("Connected: \(DemoData.me.steamID) (\(DemoData.me.name))").font(.caption).foregroundStyle(.secondary)
                 } else if !steamID.isEmpty {
                     Text("Connected: \(steamID)" + (store.me.map { " (\($0.name))" } ?? "")).font(.caption).foregroundStyle(.secondary)
                 }
@@ -107,7 +127,12 @@ struct SettingsView: View {
                         catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
                     }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var notifications: some View {
+        Form {
             Section("Notifications") {
                 Toggle("Notify me", isOn: $notificationsEnabled)
                     .onChange(of: notificationsEnabled) { _, on in if on { store.notifier.requestAuthorization() } }
@@ -119,6 +144,17 @@ struct SettingsView: View {
                 }
                 .disabled(!notificationsEnabled)
                 Text("Right-click a game in the popover to set its target price.").font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Quiet hours") {
+                Toggle("Hold notifications overnight", isOn: $quietEnabled)
+                HStack {
+                    Picker("From", selection: $quietStart) { ForEach(0..<24, id: \.self) { Text(hourLabel($0)).tag($0) } }
+                    Picker("Until", selection: $quietEnd) { ForEach(0..<24, id: \.self) { Text(hourLabel($0)).tag($0) } }
+                }
+                .disabled(!quietEnabled)
+                Text("Deals found in this window are delivered together on the first check after it ends, as one digest if there are several.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Deal rule") {
@@ -140,7 +176,12 @@ struct SettingsView: View {
                 Text("Covers your whole wishlist and watched games without setting a limit on each. Matches show under the Picks chip and notify as new deals appear; games need 50+ reviews to count as rated.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var games: some View {
+        Form {
             Section("Price limits") {
                 if store.targets.cents.isEmpty {
                     Text("No targets yet. Right-click a deal in the popover and choose “Set Target…”.").font(.caption).foregroundStyle(.secondary)
@@ -179,6 +220,21 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Muted") {
+                if store.muted.isEmpty {
+                    Text("Muted games stay in the list but never notify. Right-click a deal, or use Mute on a notification.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.muted.sorted { name($0) < name($1) }, id: \.self) { appID in
+                        HStack {
+                            Text(name(appID)).lineLimit(1)
+                            Spacer()
+                            Button("Unmute") { store.toggleMute(appID) }.controlSize(.small)
+                        }
+                    }
+                }
+            }
+
             Section("Hidden games") {
                 if store.hidden.count == 0 {
                     Text("Nothing hidden. Right-click a deal and choose “Hide (Bought It)” to keep it out of the list until it leaves your wishlist.")
@@ -194,7 +250,12 @@ struct SettingsView: View {
                     Button("Show all \(store.hidden.count) again") { store.unhideAll() }.controlSize(.small)
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var about: some View {
+        Form {
             Section("About") {
                 LabeledContent("Version", value: Updater.currentVersion)
                 HStack {
@@ -218,8 +279,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var updateStatus: String {
@@ -233,6 +292,11 @@ struct SettingsView: View {
         case .idle:
             return updater.lastChecked.map { "Last checked \($0.formatted(.relative(presentation: .named)))." } ?? "Not checked yet."
         }
+    }
+
+    private func hourLabel(_ h: Int) -> String {
+        var c = DateComponents(); c.hour = h
+        return Calendar.current.date(from: c).map { $0.formatted(date: .omitted, time: .shortened) } ?? "\(h):00"
     }
 
     private func name(_ appID: AppID) -> String { store.items[appID]?.name ?? "App \(appID)" }

@@ -50,13 +50,20 @@ For the whole wishlist at once, turn on **Settings → Deal rule**: "tell me abo
 that's at least 75% off, rated 85%+, under $20" (each part adjustable). Matches show under the
 **Picks** chip and notify as new deals appear.
 
+Right-click a deal for **Notify Me At** (25/50/75% off or the lowest seen, in one click),
+**Mute Notifications** (it stays in the list but never alerts) or **Hide (Bought It)**. Deal
+notifications carry the same Hide and Mute buttons. Settings → Notifications → **Quiet hours**
+holds alerts overnight and delivers them together afterwards.
+
+Keyboard: ⌘F search, ↑/↓ move through deals, Return opens one, Esc backs out (clears the
+search, then the filter, then closes), ⌘N watch a game, ⌘R refresh, ⌘, Settings.
+
 Click a game to open its store page, in the Steam app if it's installed (Settings → Menu bar →
 Open games in the Steam app), otherwise in your browser. Right-click it to set a target price (or "Set Target to
 $X" for the current sale price) or to hide it once you've bought it; hidden games stay out of the
 list until they leave your wishlist. Settings lists every target and hidden game. With more than
 a few deals the list gets a search field, a sort menu (Best match, Highest rated, Biggest
-discount, Cheapest, Ending soonest, Name) and filter chips (Targets, Lows, 50%+, Under 10, Mac,
-Deck), and scrolls past six rows. "Highest rated" uses Steam's review percentage, weighted down a
+discount, Cheapest, Ending soonest, Name) and filter chips (Targets, Ending soon, Lows, 50%+, Under 10, Mac, Deck; empty ones are hidden), and scrolls past six rows. "Highest rated" uses Steam's review percentage, weighted down a
 little for games with under 500 reviews; "Deck" means Verified or Playable.
 
 ## How the numbers work

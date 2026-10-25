@@ -51,6 +51,23 @@ enum Snapshot {
             }
             d.set(savedFilter, forKey: SettingsKey.dealFilter)
             d.set(savedSort, forKey: SettingsKey.dealSort)
+            for tab in ["general", "notifications", "games", "about"] {
+                let view = SettingsView(store: store, updater: Updater(), initialTab: tab).background(Color(nsColor: .windowBackgroundColor))
+                let host = NSHostingView(rootView: view)
+                host.appearance = NSAppearance(named: .aqua)
+                host.frame = NSRect(x: 0, y: 0, width: 500, height: 520)
+                let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+                window.contentView = host
+                host.layoutSubtreeIfNeeded()
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    // Not under docs/: Settings shows account details, and docs/ is published.
+                    let out = FileManager.default.temporaryDirectory.appendingPathComponent("steamwatch-settings", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("settings-\(tab).png"))
+                }
+            }
             for (k, v) in savedRule { d.set(v, forKey: k) }
             print("Snapshots written to \(dir.path)")
             exit(0)

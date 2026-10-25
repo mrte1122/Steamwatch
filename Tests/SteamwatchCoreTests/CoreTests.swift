@@ -291,6 +291,46 @@ final class DealRuleTests: XCTestCase {
     }
 }
 
+final class QualityOfLifeTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
+    func testQuietHoursWrapMidnight() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        func at(_ h: Int) -> Date { cal.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: h))! }
+        let night = QuietHours(startHour: 22, endHour: 8)
+        XCTAssertEqual([21, 22, 23, 0, 7, 8, 12].map { night.contains(at($0), calendar: cal) }, [false, true, true, true, true, false, false])
+        let nap = QuietHours(startHour: 13, endHour: 15)
+        XCTAssertEqual([12, 13, 14, 15].map { nap.contains(at($0), calendar: cal) }, [false, true, true, false])
+        XCTAssertFalse(QuietHours(startHour: 9, endHour: 9).contains(at(9), calendar: cal), "zero-length window is off")
+    }
+
+    func testQuickLimitsSkipWhatAlreadyFires() {
+        func deal(final: Int, original: Int, low: Int?) -> Deal {
+            Deal(item: StoreItem(appID: 1, name: "G", capsuleURL: nil, price: nil),
+                 price: Price(currency: "USD", finalCents: final, originalCents: original, discountPercent: (original - final) * 100 / original),
+                 lowestSeenCents: low, targetCents: nil, isFirstSale: false)
+        }
+        let atTwenty = QuickLimit.options(for: deal(final: 1600, original: 2000, low: 1200))
+        XCTAssertEqual(atTwenty.map(\.label), ["25% off", "lowest seen", "50% off", "75% off"])
+        XCTAssertEqual(atTwenty.map(\.cents), [1500, 1200, 1000, 500])
+        let deep = QuickLimit.options(for: deal(final: 800, original: 2000, low: 1000))
+        XCTAssertEqual(deep.map(\.label), ["75% off"], "50% and the old low are already beaten by the current price")
+        XCTAssertEqual(QuickLimit.options(for: deal(final: 1000, original: 2000, low: 500)).map(\.label), ["75% off"],
+                       "75% off ($5.00) equals the old low: listed once")
+    }
+
+    func testEndingSoon() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func deal(_ id: AppID, hours: Double?) -> Deal {
+            Deal(item: StoreItem(appID: id, name: "\(id)", capsuleURL: nil, price: nil),
+                 price: Price(currency: "USD", finalCents: 1, originalCents: 2, discountPercent: 50, saleEnds: hours.map { now.addingTimeInterval($0 * 3600) }),
+                 lowestSeenCents: nil, targetCents: nil, isFirstSale: false)
+        }
+        let ds = [deal(1, hours: 5), deal(2, hours: 30), deal(3, hours: nil), deal(4, hours: -1)]
+        XCTAssertEqual(DealEngine.filter(ds, .endingSoon, now: now).map(\.id), [1])
+    }
+}
+
 final class LocalSteamTests: XCTestCase {
     let sample = """
     "users"

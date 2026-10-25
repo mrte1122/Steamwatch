@@ -35,7 +35,8 @@ enum MenuBarIconRenderer {
             if !runs.isEmpty { runs.append(.gap(8)) }
             runs += r
         }
-        if store.hasData, mode == .sales || mode == .both {
+        // Nothing on sale: just the tag, no "0".
+        if store.hasData, !store.deals.isEmpty, mode == .sales || mode == .both {
             let glyph: NSColor = mono ? .black : hot ? Theme.highlight : .labelColor
             group([.glyph("tag.fill", glyph), .gap(3), .text("\(store.deals.count)", font, text)])
         }

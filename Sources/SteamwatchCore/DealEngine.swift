@@ -88,10 +88,10 @@ public enum DealEngine {
     }
 
     /// Narrow a (sorted) deal list for the popover; order is preserved.
-    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "", rule: DealRule? = nil) -> [Deal] {
+    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "", rule: DealRule? = nil, now: Date = Date()) -> [Deal] {
         let q = query.trimmingCharacters(in: .whitespaces)
         return deals.filter { d in
-            guard filter.matches(d, rule: rule) else { return false }
+            guard filter.matches(d, rule: rule, now: now) else { return false }
             return q.isEmpty || d.item.name.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
     }
@@ -99,7 +99,7 @@ public enum DealEngine {
 
 /// The chip row above the deal list.
 public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
-    case all, picks, targets, lows, halfOff, underTen, mac, deck
+    case all, picks, targets, endingSoon, lows, halfOff, underTen, mac, deck
 
     public var id: String { rawValue }
 
@@ -107,6 +107,7 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .all: return "All"
         case .picks: return "Picks"
+        case .endingSoon: return "Ending soon"
         case .targets: return "Targets"
         case .lows: return "Lows"
         case .halfOff: return "50%+"
@@ -117,10 +118,11 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 
     /// `.picks` needs the user's rule; without one it matches nothing (and the chip is hidden).
-    public func matches(_ d: Deal, rule: DealRule? = nil) -> Bool {
+    public func matches(_ d: Deal, rule: DealRule? = nil, now: Date = Date()) -> Bool {
         switch self {
         case .all: return true
         case .picks: return rule?.matches(d) ?? false
+        case .endingSoon: return d.endsSoon(now: now)
         case .targets: return d.targetCents != nil
         case .lows: return d.isFirstSale || d.isNewLow
         case .halfOff: return d.price.discountPercent >= 50
@@ -160,6 +162,48 @@ public struct DealRule: Codable, Equatable, Sendable {
         if let r = minRating { parts.append("rated \(r)%+") }
         if let m = maxPriceCents { parts.append("under \(Format.price(m, currency: currency))") }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Which way a quick limit was worked out, for its menu label.
+public struct QuickLimit: Equatable, Sendable {
+    public enum Basis: Equatable, Sendable { case percentOff(Int), lowestSeen }
+    public let basis: Basis
+    public let cents: Int
+
+    public var label: String {
+        switch basis {
+        case .percentOff(let p): return "\(p)% off"
+        case .lowestSeen: return "lowest seen"
+        }
+    }
+
+    /// One-click limits for the right-click menu: 25/50/75% off the regular price and the lowest
+    /// price seen, skipping any the current price already meets (that would fire immediately) and
+    /// duplicates.
+    public static func options(for d: Deal) -> [QuickLimit] {
+        var out: [QuickLimit] = []
+        for p in [25, 50, 75] {
+            let c = d.price.originalCents * (100 - p) / 100
+            if c < d.price.finalCents, c > 0 { out.append(QuickLimit(basis: .percentOff(p), cents: c)) }
+        }
+        if let low = d.lowestSeenCents, low < d.price.finalCents, !out.contains(where: { $0.cents == low }) {
+            out.append(QuickLimit(basis: .lowestSeen, cents: low))
+        }
+        return out.sorted { $0.cents > $1.cents }
+    }
+}
+
+/// Notifications held back overnight. Hours are local and the window may wrap midnight (22 → 8).
+public struct QuietHours: Codable, Equatable, Sendable {
+    public var startHour: Int
+    public var endHour: Int
+    public init(startHour: Int, endHour: Int) { self.startHour = startHour; self.endHour = endHour }
+
+    public func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+        let h = calendar.component(.hour, from: date)
+        if startHour == endHour { return false }
+        return startHour < endHour ? (h >= startHour && h < endHour) : (h >= startHour || h < endHour)
     }
 }
 

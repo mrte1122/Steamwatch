@@ -13,7 +13,7 @@ public enum DemoData {
         game(526870, "Satisfactory", 3999, 3199, 20, ends: 6),
         game(1942280, "Brotato", 499, 349, 30, ends: 3),
         game(2379780, "Balatro", 1499, 1199, 20, ends: 9),
-        game(1868140, "Dave the Diver", 1999, 1399, 30, ends: 1),
+        game(1868140, "Dave the Diver", 1999, 1399, 30, ends: 0.4),
         game(1091500, "Cyberpunk 2077", 5999, 5999, 0),
         game(2358720, "Black Myth: Wukong", 5999, 5999, 0),
         game(1245620, "Elden Ring", 5999, 5999, 0),
@@ -66,7 +66,7 @@ public enum DemoData {
         return log
     }
 
-    public static let me = PlayerSummary(steamID: "76561197960287930", name: "tyler", avatarURL: nil, isOnline: true, currentGame: nil, currentGameID: nil)
+    public static let me = PlayerSummary(steamID: "76561197960287930", name: "demo", avatarURL: nil, isOnline: true, currentGame: nil, currentGameID: nil)
 
     public static let friendsOnline: [PlayerSummary] = [
         PlayerSummary(steamID: "1", name: "mags", avatarURL: nil, isOnline: true, currentGame: "Deep Rock Galactic", currentGameID: 548430),
@@ -82,10 +82,10 @@ public enum DemoData {
     ]
     private static let noMac: Set<AppID> = [526870, 1091500, 2358720, 1245620]
 
-    private static func game(_ id: AppID, _ name: String, _ original: Int, _ final: Int, _ pct: Int, ends: Int? = nil) -> StoreItem {
+    private static func game(_ id: AppID, _ name: String, _ original: Int, _ final: Int, _ pct: Int, ends: Double? = nil) -> StoreItem {
         StoreItem(appID: id, name: name, capsuleURL: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(id)/capsule_231x87.jpg"),
                   price: Price(currency: "USD", finalCents: final, originalCents: original, discountPercent: pct,
-                               saleEnds: ends.map { now.addingTimeInterval(Double($0) * 86_400 + 7200) }),
+                               saleEnds: ends.map { now.addingTimeInterval($0 * 86_400 + 7200) }),
                   reviews: reviews[id].map { ReviewSummary(percentPositive: $0.0, count: $0.1, label: $0.2) },
                   platforms: Platforms(windows: true, mac: !noMac.contains(id), linux: false, deck: id == 526870 ? .playable : .verified))
     }

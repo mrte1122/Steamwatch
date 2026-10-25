@@ -96,6 +96,11 @@ public struct Deal: Identifiable, Equatable, Sendable {
     }
 
     public var id: AppID { item.appID }
+    /// The discount ends within a day.
+    public func endsSoon(now: Date = Date()) -> Bool {
+        guard let ends = price.saleEnds else { return false }
+        return ends > now && ends.timeIntervalSince(now) <= 86_400
+    }
     public var meetsTarget: Bool { targetCents.map { price.finalCents <= $0 } ?? false }
     public var isLowestSeen: Bool { lowestSeenCents.map { price.finalCents <= $0 } ?? true }
     /// "Lowest seen" only means something once there's history to compare against.

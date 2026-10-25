@@ -97,6 +97,7 @@ final class Store: ObservableObject {
             }
         }
         pathMonitor.start(queue: DispatchQueue(label: "Steamwatch.network"))
+        handleNotificationActions()
     }
 
     private let pathMonitor = NWPathMonitor()
@@ -305,17 +306,59 @@ final class Store: ObservableObject {
     }
     func clearPreviewSaleEvent() { if Demo.isActive { saleEvent = nil } }
 
+    // MARK: Muting and quiet hours
+
+    /// Games that stay in the list but never notify.
+    @Published private(set) var muted: Set<AppID> = Set(UserDefaults.standard.array(forKey: SettingsKey.mutedApps) as? [Int] ?? [])
+    /// Alerts that arrived during quiet hours, delivered on the first refresh after.
+    private var heldAlerts: [DealAlert] = []
+
+    func toggleMute(_ appID: AppID) {
+        if muted.contains(appID) { muted.remove(appID) } else { muted.insert(appID) }
+        heldAlerts.removeAll { muted.contains($0.deal.item.appID) }
+        if !Demo.isActive { UserDefaults.standard.set(Array(muted).sorted(), forKey: SettingsKey.mutedApps) }
+    }
+
+    var quietHours: QuietHours? {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: SettingsKey.quietEnabled) else { return nil }
+        return QuietHours(startHour: d.integer(forKey: SettingsKey.quietStart), endHour: d.integer(forKey: SettingsKey.quietEnd))
+    }
+
+    /// Wires the banner buttons; called once at launch.
+    private func handleNotificationActions() {
+        notifier.onAction = { [weak self] action, appID in
+            guard let self else { return }
+            switch action {
+            case .hide: self.hide(appID)
+            case .mute: if !self.muted.contains(appID) { self.toggleMute(appID) }
+            case .open: break
+            }
+        }
+    }
+
     private func notify(_ deals: [Deal]) {
         let d = UserDefaults.standard
         var sent = Set(d.stringArray(forKey: SettingsKey.sentAlerts) ?? [])
         var policy = DealEngine.Policy(target: d.bool(forKey: SettingsKey.notifyTarget), newLow: d.bool(forKey: SettingsKey.notifyNewLow),
                                        firstSale: d.bool(forKey: SettingsKey.notifyFirstSale), anySale: d.bool(forKey: SettingsKey.notifyAnySale))
         policy.rule = rule
-        let alerts = d.bool(forKey: SettingsKey.notificationsEnabled)
-            ? DealEngine.alerts(for: deals, alreadySent: sent, policy: policy, armed: armed) : []
+        let fresh = d.bool(forKey: SettingsKey.notificationsEnabled)
+            ? DealEngine.alerts(for: deals, alreadySent: sent, policy: policy, armed: armed).filter { !muted.contains($0.deal.item.appID) } : []
+        // Overnight, hold everything; the first refresh after quiet hours delivers it (as a digest if many).
+        let alerts: [DealAlert]
+        if let quiet = quietHours, quiet.contains(Date()) {
+            heldAlerts += fresh.filter { a in !heldAlerts.contains { $0.key == a.key } }
+            alerts = []
+        } else {
+            let stillOnSale = Set(deals.map(\.id))
+            alerts = heldAlerts.filter { stillOnSale.contains($0.deal.item.appID) } + fresh
+            heldAlerts = []
+        }
         // Target hits post on their own; a burst of other alerts, or any during a big sale, becomes one digest.
         let plan = NotificationPlan.plan(alerts, totalOnSale: deals.count, event: saleEvent)
         for a in plan.individual { notifier.post(a) }
+        // (Nothing is posted while alerts is empty, which covers quiet hours.)
         if let digest = plan.digest {
             notifier.post(title: digest.title, body: digest.body, url: Links.wishlist, id: "digest-\(Int(Date().timeIntervalSince1970))")
         }

@@ -17,6 +17,10 @@ struct PopoverView: View {
     @State private var editingTarget: AppID?
     /// The store-search panel replaces the deal list while open.
     @State private var adding = false
+    /// Keyboard: the deal ↑/↓ moves to and Return opens, and the search field ⌘F jumps to.
+    @State private var selection: AppID?
+    @State private var searchShown = false
+    @FocusState private var searchFocused: Bool
 
     /// Rows visible before the list scrolls.
     private let visibleRows = 6
@@ -24,8 +28,14 @@ struct PopoverView: View {
     private var filter: DealFilter { DealFilter(rawValue: filterRaw) ?? .all }
     private var sort: DealSort { DealSort(rawValue: sortRaw) ?? .best }
     private var shown: [Deal] { sort.sorted(DealEngine.filter(store.deals, filter, query: query, rule: store.rule)) }
-    /// The Picks chip only exists while a rule is on.
-    private var chips: [DealFilter] { DealFilter.allCases.filter { $0 != .picks || store.rule != nil } }
+    /// Chips with nothing in them are left out (All and the selected one always stay); Picks needs a rule.
+    private var chips: [DealFilter] {
+        DealFilter.allCases.filter { f in
+            if f == .all || f == filter { return true }
+            if f == .picks, store.rule == nil { return false }
+            return !DealEngine.filter(store.deals, f, rule: store.rule).isEmpty
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -40,7 +50,7 @@ struct PopoverView: View {
                 } else {
                     errorBanner
                     saleBanner
-                    if store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
+                    if searchShown || store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
                     dealsSection
                     if showPlaytime { playtimeSection }
                 }
@@ -51,6 +61,59 @@ struct PopoverView: View {
         .padding(14)
         .frame(width: 340)
         .onAppear { if previewSearch != nil { adding = true } }
+        .background(shortcuts)
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.downArrow) { move(1) }
+        .onKeyPress(.upArrow) { move(-1) }
+        .onKeyPress(.return) { openSelection() }
+        .onKeyPress(.escape) { backOut() }
+    }
+
+    // MARK: Keyboard
+
+    /// Invisible buttons that carry the ⌘ shortcuts.
+    private var shortcuts: some View {
+        VStack {
+            Button("Search") {
+                adding = false
+                searchShown = true
+                DispatchQueue.main.async { searchFocused = true }
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            Button("Watch a game") { adding = true }.keyboardShortcut("n", modifiers: .command)
+            Button("Refresh") { Task { await store.refresh(force: true) } }.keyboardShortcut("r", modifiers: .command)
+            Button("Settings") { openSettings() }.keyboardShortcut(",", modifiers: .command)
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func move(_ step: Int) -> KeyPress.Result {
+        guard !adding, !shown.isEmpty else { return .ignored }
+        let ids = shown.map(\.id)
+        let i = selection.flatMap { ids.firstIndex(of: $0) }
+        let next = i.map { min(max($0 + step, 0), ids.count - 1) } ?? (step > 0 ? 0 : ids.count - 1)
+        selection = ids[next]
+        return .handled
+    }
+
+    private func openSelection() -> KeyPress.Result {
+        guard !adding, let id = selection, let deal = shown.first(where: { $0.id == id }) else { return .ignored }
+        SteamLink.open(deal.item.storeURL)
+        return .handled
+    }
+
+    /// Esc backs out one level (search panel, query, filter, selection); with nothing to undo it's
+    /// left to the popover, which closes.
+    private func backOut() -> KeyPress.Result {
+        if adding { adding = false; return .handled }
+        if !query.isEmpty { query = ""; return .handled }
+        if searchShown { searchShown = false; searchFocused = false; return .handled }
+        if filter != .all { filterRaw = DealFilter.all.rawValue; return .handled }
+        if selection != nil { selection = nil; return .handled }
+        return .ignored
     }
 
     // MARK: Header
@@ -205,6 +268,10 @@ struct PopoverView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
                     TextField("Search deals", text: $query).textFieldStyle(.plain).font(.callout)
+                        .focused($searchFocused)
+                        .onKeyPress(.downArrow) { move(1) }
+                        .onKeyPress(.upArrow) { move(-1) }
+                        .onKeyPress(.return) { openSelection() }
                     if !query.isEmpty {
                         Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                             .buttonStyle(.borderless)
@@ -263,18 +330,23 @@ struct PopoverView: View {
             Text("No deals match.").font(.callout).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).padding(14).card()
         } else {
+            ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(spacing: 2) {
                     ForEach(shown) { deal in
-                        DealRow(deal: deal, now: store.now, sort: sort, watched: store.watchlist.contains(deal.id), picked: store.rule?.matches(deal) ?? false, editing: editingTarget == deal.id,
+                        DealRow(deal: deal, now: store.now, sort: sort, selected: selection == deal.id, watched: store.watchlist.contains(deal.id), picked: store.rule?.matches(deal) ?? false, editing: editingTarget == deal.id,
                                 beginEdit: { editingTarget = deal.id },
                                 commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil },
-                                hide: { store.hide(deal.id) })
+                                hide: { store.hide(deal.id) },
+                                muted: store.muted.contains(deal.id), toggleMute: { store.toggleMute(deal.id) })
+                        .id(deal.id)
                     }
                 }
             }
             .frame(maxHeight: CGFloat(visibleRows) * DealRow.height + CGFloat(visibleRows - 1) * 2)
             .fixedSize(horizontal: false, vertical: shown.count <= visibleRows)
+            .onChange(of: selection) { _, id in if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } } }
+            }
         }
     }
 
@@ -324,6 +396,8 @@ struct DealRow: View {
     let deal: Deal
     let now: Date
     var sort: DealSort = .best
+    /// Highlighted by the keyboard.
+    var selected = false
     /// Added through store search rather than the Steam wishlist.
     var watched = false
     /// Matches the user's standing deal rule.
@@ -332,6 +406,8 @@ struct DealRow: View {
     let beginEdit: () -> Void
     let commit: (Int?) -> Void
     let hide: () -> Void
+    var muted = false
+    var toggleMute: () -> Void = {}
     @State private var text = ""
     @Environment(\.openURL) private var openURL
 
@@ -352,7 +428,9 @@ struct DealRow: View {
                         if deal.targetCents != nil { Button("Clear") { commit(nil) }.controlSize(.mini) }
                     }
                 } else {
-                    Text(detail).font(.caption).foregroundStyle(deal.meetsTarget ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary)).lineLimit(1)
+                    Text(detail).font(.caption).lineLimit(1)
+                        .foregroundStyle(deal.meetsTarget ? AnyShapeStyle(accent)
+                                         : deal.endsSoon(now: now) ? AnyShapeStyle(Color(ns: Theme.readable(.systemOrange))) : AnyShapeStyle(.secondary))
                 }
             }
             Spacer(minLength: 4)
@@ -377,6 +455,7 @@ struct DealRow: View {
         .padding(.horizontal, 8)
         .frame(height: Self.height)
         .card(tint: deal.meetsTarget ? Color(ns: Theme.highlight) : nil)
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0))
         .contentShape(Rectangle())
         .onTapGesture { if !editing { SteamLink.open(deal.item.storeURL) } }
         .contextMenu {
@@ -384,12 +463,21 @@ struct DealRow: View {
             if SteamLink.opensInApp { Button("Open in Browser") { openURL(deal.item.storeURL) } }
             Divider()
             Button("Set Target to \(Format.price(deal.price.finalCents, currency: deal.price.currency))") { commit(deal.price.finalCents) }
+            let quick = QuickLimit.options(for: deal)
+            if !quick.isEmpty {
+                Menu("Notify Me At") {
+                    ForEach(quick, id: \.cents) { q in
+                        Button("\(Format.price(q.cents, currency: deal.price.currency)) (\(q.label))") { commit(q.cents) }
+                    }
+                }
+            }
             Button(deal.targetCents == nil ? "Set Target Price…" : "Change Target Price…") {
                 text = deal.targetCents.map { String(format: "%.2f", Double($0) / 100) } ?? ""
                 beginEdit()
             }
             if deal.targetCents != nil { Button("Clear Target") { commit(nil) } }
             Divider()
+            Button(muted ? "Unmute Notifications" : "Mute Notifications") { toggleMute() }
             Button("Hide (Bought It)") { hide() }
         }
         .help("Click to open in the Steam store. Right-click for targets or to hide.")
@@ -406,7 +494,10 @@ struct DealRow: View {
         if picked, !deal.meetsTarget { parts.insert("your rule", at: 0) }
         if watched { parts.append("watching") }
         else if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
-        if let ends = deal.price.saleEnds { parts.append("ends \(Format.saleEnds(ends, now: now))") }
+        if let ends = deal.price.saleEnds {
+            if deal.endsSoon(now: now) { parts.insert("ends \(Format.saleEnds(ends, now: now))", at: 0) }
+            else { parts.append("ends \(Format.saleEnds(ends, now: now))") }
+        }
         // The review score leads when the list is sorted by it, so the order is legible; otherwise
         // it trails, where the row can afford to truncate it.
         if let r = deal.item.reviews {

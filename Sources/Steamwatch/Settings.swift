@@ -70,6 +70,10 @@ enum SettingsKey {
     static let ruleMinDiscount = "ruleMinDiscount"        // percent
     static let ruleMinRating = "ruleMinRating"            // percent positive; 0 = any
     static let ruleMaxPrice = "ruleMaxPrice"              // cents; 0 = any
+    static let mutedApps = "mutedApps"                    // [Int] app IDs that never notify
+    static let quietEnabled = "quietEnabled"
+    static let quietStart = "quietStart"                  // hour, 0...23
+    static let quietEnd = "quietEnd"                      // hour, 0...23
     static let lastUpdateCheck = "lastUpdateCheck"        // Date
     static let notifiedUpdateVersion = "notifiedUpdateVersion"
 
@@ -97,6 +101,10 @@ enum SettingsKey {
             ruleMinDiscount: 75,
             ruleMinRating: 85,
             ruleMaxPrice: 0,
+            mutedApps: [Int](),
+            quietEnabled: false,
+            quietStart: 22,
+            quietEnd: 8,
         ])
     }
 }

@@ -32,6 +32,7 @@ Everything below is in the core and needs no porting:
 | Sale-event detection and notification digest | `SaleEvent`, `NotificationPlan` | `sale-event.json`; pure functions |
 | Store search and the watchlist | `SteamClient.search`, `Watchlist` | `watchlist.json`; watched games join the wishlist as unranked entries |
 | Standing deal rule and the Picks chip | `DealRule`, `DealFilter.picks` | pure functions |
+| Quick limits, quiet hours, ending soon | `QuickLimit`, `QuietHours`, `Deal.endsSoon` | pure functions; muting and held alerts live in the platform Store |
 | Signed-in account from the local Steam client | `LocalSteam.accounts()` | already looks in `%ProgramFiles(x86)%\\Steam\\config\\loginusers.vdf` on Windows |
 | Last good reading | `CachedState` | `cache.json` |
 | Price / hours / relative-time strings | `Format` | locale-aware via `NumberFormatter` |
