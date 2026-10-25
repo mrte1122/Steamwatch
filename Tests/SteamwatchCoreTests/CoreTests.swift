@@ -331,6 +331,55 @@ final class QualityOfLifeTests: XCTestCase {
     }
 }
 
+final class SuggestionTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
+    func testProfileSkipsGenericTagsAndWeightsRankedGames() {
+        let a = StoreItem(appID: 1, name: "A", capsuleURL: nil, price: nil, tagIDs: [492, 1716, 1628])   // Indie first: ignored
+        let b = StoreItem(appID: 2, name: "B", capsuleURL: nil, price: nil, tagIDs: [1628, 1716])
+        let p = TasteProfile.build(from: [a, b], priorities: [2: 1])
+        XCTAssertNil(p.weights[492])
+        XCTAssertEqual(p.top(2), [1628, 1716], "B is ranked #1, so its lead tag wins")
+        XCTAssertTrue(TasteProfile.build(from: []).isEmpty)
+    }
+
+    func testDemoSuggestionsMatchTasteAndSkipJunk() {
+        let s = DemoData.suggestions
+        let names = s.suggestions.map(\.item.name)
+        XCTAssertEqual(Set(names), ["Slay the Spire", "Dead Cells", "Inscryption", "Hollow Knight", "Don't Starve"])
+        XCTAssertFalse(names.contains("Generic Shooter"), "70% rated and only generic tags")
+        XCTAssertEqual(names.first, "Slay the Spire", "Balatro, a deckbuilder, is #1 on the demo wishlist, so deckbuilding counts double")
+        XCTAssertEqual(s.names(for: s.suggestions[0]).count, 2)
+    }
+
+    func testExclusionsAndQualityBars() {
+        let profile = TasteProfile(weights: [1716: 3])
+        func c(_ id: AppID, pct: Int = 50, rating: Int = 95, reviews: Int = 1000, price: Bool = true) -> StoreItem {
+            StoreItem(appID: id, name: "\(id)", capsuleURL: nil,
+                      price: price ? Price(currency: "USD", finalCents: 500, originalCents: 1000, discountPercent: pct) : nil,
+                      reviews: ReviewSummary(percentPositive: rating, count: reviews, label: ""), tagIDs: [1716])
+        }
+        let ranked = SuggestionEngine.rank([c(1), c(2), c(3, pct: 0), c(4, rating: 60), c(5, reviews: 20), c(6, price: false), c(1)],
+                                           profile: profile, exclude: [2])
+        XCTAssertEqual(ranked.map(\.id), [1], "excluded, undiscounted, poorly rated, barely reviewed, unpriced and duplicate candidates drop")
+        XCTAssertTrue(SuggestionEngine.rank([c(1)], profile: TasteProfile(weights: [:]), exclude: []).isEmpty)
+    }
+
+    func testDecodesQueryResultsWithWeightedTags() throws {
+        let json = """
+        {"response":{"metadata":{"total_matching_records":1},"store_items":[
+          {"id":646570,"success":1,"name":"Slay the Spire","tags":[{"tagid":1716,"weight":500},{"tagid":32322,"weight":900}],
+           "best_purchase_option":{"final_price_in_cents":"624","original_price_in_cents":"2499","discount_pct":75},
+           "reviews":{"summary_filtered":{"review_count":140000,"percent_positive":97,"review_score_label":"Overwhelmingly Positive"}}}
+        ]}}
+        """
+        let r = try JSONDecoder().decode(GetItemsResponse.self, from: Data(json.utf8))
+        let item = StoreItem(wire: r.response.store_items![0])
+        XCTAssertEqual(item?.tagIDs, [32322, 1716], "ordered by weight")
+        XCTAssertEqual(item?.price?.discountPercent, 75)
+    }
+}
+
 final class LocalSteamTests: XCTestCase {
     let sample = """
     "users"

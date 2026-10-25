@@ -13,6 +13,7 @@ enum Entry {
         if args.contains("--selftest") { exit(SelfTest.run()) }
         if args.contains("--once") { runOnce() }
         if let i = args.firstIndex(of: "--search"), i + 1 < args.count { runSearch(args[i + 1]) }
+        if args.contains("--suggest") { runSuggest() }
         if args.contains("--check-update") || args.contains("--update") {
             runUpdate(install: args.contains("--update"))
         }
@@ -41,6 +42,26 @@ enum Entry {
 }
 
 extension Entry {
+    /// `--suggest`: refresh, then fetch and print suggestions (ignores the twice-a-day limit).
+    @MainActor
+    static func runSuggest() -> Never {
+        let store = Store()
+        Task { @MainActor in
+            if Demo.isActive { store.loadDemo() } else {
+                await store.refresh(force: true)
+                await store.refreshSuggestions(force: true)
+            }
+            for s in store.visibleSuggestions {
+                let price = s.item.price.map { "\(Format.price($0.finalCents, currency: $0.currency)) −\($0.discountPercent)%" } ?? ""
+                print("\(s.item.name)\t\(price)\t\(s.item.reviews.map { "\($0.percentPositive)%" } ?? "")\t\(store.tagNames(for: s).joined(separator: ", "))")
+            }
+            print("\(store.visibleSuggestions.count) suggestion(s)" + (store.suggestionNote.map { " — \($0)" } ?? ""))
+            exit(0)
+        }
+        RunLoop.main.run()
+        exit(0)
+    }
+
     /// `--search <term>`: the store search behind the popover's + panel, printed.
     @MainActor
     static func runSearch(_ term: String) -> Never {

@@ -13,6 +13,7 @@ struct PopoverView: View {
     @AppStorage(SettingsKey.dealSort) private var sortRaw = DealSort.best.rawValue
     @AppStorage(SettingsKey.showPlaytime) private var showPlaytime = true
     @AppStorage(SettingsKey.showFriends) private var showFriends = true
+    @AppStorage(SettingsKey.showSuggestions) private var showSuggestions = true
     @State private var query = ""
     @State private var editingTarget: AppID?
     /// The store-search panel replaces the deal list while open.
@@ -52,6 +53,7 @@ struct PopoverView: View {
                     saleBanner
                     if searchShown || store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
                     dealsSection
+                    if showSuggestions, !store.visibleSuggestions.isEmpty { SuggestionsSection(store: store) }
                     if showPlaytime { playtimeSection }
                 }
             }
@@ -579,6 +581,81 @@ struct FriendsMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+}
+
+/// "You might like": discounted games outside the wishlist that fit its tags.
+struct SuggestionsSection: View {
+    @ObservedObject var store: Store
+    @AppStorage(SettingsKey.suggestionsExpanded) private var expanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").foregroundStyle(Color(ns: Theme.readable(Theme.accent)))
+                    Text("You might like").font(.callout.weight(.semibold))
+                    Text("\(store.visibleSuggestions.count)").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Discounted, well-reviewed games that share tags with your wishlist")
+            if expanded {
+                VStack(spacing: 2) {
+                    ForEach(store.visibleSuggestions.prefix(6)) { s in row(s) }
+                }
+            }
+        }
+    }
+
+    private func row(_ s: Suggestion) -> some View {
+        HStack(spacing: 10) {
+            CapsuleArt(url: s.item.capsuleURL)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(s.item.name).font(.callout.weight(.medium)).lineLimit(1)
+                Text(detail(s)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if let p = s.item.price {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("−\(p.discountPercent)%").font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Color(ns: Theme.highlight).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
+                        .foregroundStyle(Color(ns: Theme.readable(Theme.highlight)))
+                    Text(Format.price(p.finalCents, currency: p.currency)).font(.callout.weight(.medium)).monospacedDigit()
+                }
+                .fixedSize()
+            }
+            VStack(spacing: 4) {
+                Button { store.watch(s.item, limitCents: nil) } label: { Image(systemName: "plus.circle") }
+                    .help("Watch \(s.item.name)")
+                Button { store.dismissSuggestion(s.id) } label: { Image(systemName: "xmark.circle") }
+                    .help("Not interested")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: DealRow.height)
+        .card()
+        .contentShape(Rectangle())
+        .onTapGesture { SteamLink.open(s.item.storeURL) }
+        .contextMenu {
+            Button(SteamLink.opensInApp ? "Open in Steam" : "Open Store Page") { SteamLink.open(s.item.storeURL) }
+            Button("Watch") { store.watch(s.item, limitCents: nil) }
+            Button("Not Interested") { store.dismissSuggestion(s.id) }
+        }
+    }
+
+    private func detail(_ s: Suggestion) -> String {
+        var parts: [String] = []
+        let tags = store.tagNames(for: s)
+        if !tags.isEmpty { parts.append(tags.joined(separator: ", ")) }
+        if let r = s.item.reviews { parts.append("\(r.percentPositive)% positive") }
+        return parts.joined(separator: " · ")
     }
 }
 

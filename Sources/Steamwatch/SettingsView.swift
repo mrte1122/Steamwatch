@@ -32,6 +32,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.quietEnabled) private var quietEnabled = false
     @AppStorage(SettingsKey.quietStart) private var quietStart = 22
     @AppStorage(SettingsKey.quietEnd) private var quietEnd = 8
+    @AppStorage(SettingsKey.showSuggestions) private var showSuggestions = true
 
     @State private var apiKey = Keychain.load(.apiKey) ?? ""
     @State private var profileStatus: String?
@@ -118,6 +119,9 @@ struct SettingsView: View {
                 }
                 Toggle("Playtime section", isOn: $showPlaytime)
                 Toggle("Friends online", isOn: $showFriends)
+                Toggle("“You might like” suggestions", isOn: $showSuggestions)
+                    .onChange(of: showSuggestions) { _, on in if on { Task { await store.refreshSuggestions(force: true) } } }
+                    .help("Discounted, well-reviewed games that share tags with your wishlist. Checked twice a day.")
                 Toggle("Open games in the Steam app", isOn: $openInSteam)
                     .disabled(!SteamLink.steamInstalled)
                     .help(SteamLink.steamInstalled ? "Otherwise store pages open in your browser." : "Steam isn't installed, so pages open in your browser.")
@@ -232,6 +236,21 @@ struct SettingsView: View {
                             Button("Unmute") { store.toggleMute(appID) }.controlSize(.small)
                         }
                     }
+                }
+            }
+
+            Section("Suggestions") {
+                HStack {
+                    Text(store.dismissed.isEmpty ? "Suggestions you mark “Not interested” are never shown again."
+                         : "\(store.dismissed.count) suggestion\(store.dismissed.count == 1 ? "" : "s") marked “Not interested”.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if !store.dismissed.isEmpty { Button("Reset") { store.resetDismissedSuggestions() }.controlSize(.small) }
+                    Button(store.isSuggesting ? "Finding…" : "Refresh Now") { Task { await store.refreshSuggestions(force: true) } }
+                        .controlSize(.small).disabled(store.isSuggesting)
+                }
+                if !store.hasAPIKey {
+                    Text("With a Web API key, games you already own are left out too.").font(.caption).foregroundStyle(.secondary)
                 }
             }
 

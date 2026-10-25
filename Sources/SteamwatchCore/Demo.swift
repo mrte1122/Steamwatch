@@ -81,12 +81,52 @@ public enum DemoData {
         1245620: (92, 760_000, "Very Positive"), 892970: (94, 480_000, "Very Positive"),
     ]
     private static let noMac: Set<AppID> = [526870, 1091500, 2358720, 1245620]
+    /// Real tag IDs, so the demo wishlist leans roguelike and metroidvania.
+    private static let tags: [AppID: [Int]] = [
+        1030300: [1628, 1625, 29482, 19], 1145350: [1716, 3959, 1646, 19], 753640: [1755, 5716, 1695, 21],
+        526870: [255534, 7332, 1695, 1702], 1942280: [1716, 3959, 19, 4182], 2379780: [32322, 1666, 3959, 1716],
+        1868140: [9157, 7332, 122, 21], 1091500: [4115, 1695, 122, 19], 2358720: [29482, 1646, 19, 122],
+        1245620: [29482, 1695, 122, 1646], 892970: [1662, 1695, 1702, 7332],
+    ]
+
+    public static let tagNames: [Int: String] = [
+        1716: "Roguelike", 3959: "Roguelite", 1628: "Metroidvania", 1625: "Platformer", 1646: "Hack and Slash",
+        1755: "Space", 5716: "Mystery", 255534: "Automation", 7332: "Base Building", 1666: "Card Game",
+        32322: "Deckbuilding", 1662: "Survival", 1695: "Open World", 122: "RPG", 4115: "Cyberpunk",
+        29482: "Souls-like", 9157: "Underwater", 1702: "Crafting",
+    ]
+
+    /// Discounted games that aren't on the demo wishlist, as the store query would return them.
+    public static let suggestionCandidates: [StoreItem] = [
+        candidate(646570, "Slay the Spire", 2499, 75, 97, 140_000, [32322, 1716, 1666, 3959]),
+        candidate(588650, "Dead Cells", 2499, 50, 97, 160_000, [1716, 1628, 3959, 1646]),
+        candidate(1092790, "Inscryption", 1999, 60, 97, 70_000, [32322, 1666, 5716, 1716]),
+        candidate(367520, "Hollow Knight", 1499, 50, 97, 400_000, [1628, 1625, 29482, 21]),
+        candidate(219740, "Don't Starve", 999, 75, 96, 110_000, [1662, 1702, 1716, 7332]),
+        candidate(1, "Generic Shooter", 1999, 80, 70, 5_000, [19, 3859]),
+    ]
+
+    public static var suggestions: SuggestionsCache {
+        let profile = TasteProfile.build(from: items, priorities: Dictionary(uniqueKeysWithValues: wishlist.map { ($0.appID, $0.priority) }))
+        let ranked = SuggestionEngine.rank(suggestionCandidates, profile: profile, exclude: Set(wishlist.map(\.appID)))
+        return SuggestionsCache(fetchedAt: now.addingTimeInterval(-3 * 3600), suggestions: ranked,
+                                tagNames: Dictionary(uniqueKeysWithValues: tagNames.map { (String($0.key), $0.value) }))
+    }
+
+    private static func candidate(_ id: AppID, _ name: String, _ original: Int, _ pct: Int, _ rating: Int, _ reviews: Int, _ tags: [Int]) -> StoreItem {
+        StoreItem(appID: id, name: name, capsuleURL: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(id)/capsule_231x87.jpg"),
+                  price: Price(currency: "USD", finalCents: original * (100 - pct) / 100, originalCents: original, discountPercent: pct,
+                               saleEnds: now.addingTimeInterval(4 * 86_400)),
+                  reviews: ReviewSummary(percentPositive: rating, count: reviews, label: ""),
+                  platforms: Platforms(windows: true, mac: true, linux: false, deck: .verified), tagIDs: tags)
+    }
 
     private static func game(_ id: AppID, _ name: String, _ original: Int, _ final: Int, _ pct: Int, ends: Double? = nil) -> StoreItem {
         StoreItem(appID: id, name: name, capsuleURL: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(id)/capsule_231x87.jpg"),
                   price: Price(currency: "USD", finalCents: final, originalCents: original, discountPercent: pct,
                                saleEnds: ends.map { now.addingTimeInterval($0 * 86_400 + 7200) }),
                   reviews: reviews[id].map { ReviewSummary(percentPositive: $0.0, count: $0.1, label: $0.2) },
-                  platforms: Platforms(windows: true, mac: !noMac.contains(id), linux: false, deck: id == 526870 ? .playable : .verified))
+                  platforms: Platforms(windows: true, mac: !noMac.contains(id), linux: false, deck: id == 526870 ? .playable : .verified),
+                  tagIDs: tags[id])
     }
 }

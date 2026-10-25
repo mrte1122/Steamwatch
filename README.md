@@ -50,6 +50,13 @@ For the whole wishlist at once, turn on **Settings → Deal rule**: "tell me abo
 that's at least 75% off, rated 85%+, under $20" (each part adjustable). Matches show under the
 **Picks** chip and notify as new deals appear.
 
+**You might like** suggests discounted games that aren't on your wishlist but fit it. Steamwatch
+reads the store tags of your wishlisted games (ignoring broad ones like "Indie" or "Singleplayer",
+and counting the games you've ranked highest double), asks Steam for discounted games under your
+top tags, and keeps the best-reviewed fits (85%+ positive from 500+ reviews). Click **+** to watch
+one or **✕** for "not interested". It checks twice a day; with a Web API key, games you own are
+skipped. Turn it off in Settings → General.
+
 Right-click a deal for **Notify Me At** (25/50/75% off or the lowest seen, in one click),
 **Mute Notifications** (it stays in the list but never alerts) or **Hide (Bought It)**. Deal
 notifications carry the same Hide and Mute buttons. Settings → Notifications → **Quiet hours**
@@ -106,6 +113,7 @@ Useful flags on the built binary:
 build/Steamwatch.app/Contents/MacOS/Steamwatch --once          # fetch once and print a summary
 build/Steamwatch.app/Contents/MacOS/Steamwatch --once --demo   # same with sample data
 build/Steamwatch.app/Contents/MacOS/Steamwatch --search "hades"   # the store search, printed
+build/Steamwatch.app/Contents/MacOS/Steamwatch --suggest           # fetch and print suggestions
 build/Steamwatch.app/Contents/MacOS/Steamwatch --snapshot docs --demo   # README screenshots
 ```
 
@@ -146,7 +154,7 @@ docs/windows.md          what a Windows port needs
 ```
 
 Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
-`playtime.json`, `targets.json`, `watchlist.json`, `hidden.json`, `sale-event.json`, `cache.json`). Preferences are in
+`playtime.json`, `targets.json`, `watchlist.json`, `suggestions.json`, `hidden.json`, `sale-event.json`, `cache.json`). Preferences are in
 `io.github.mrte1122.Steamwatch`.
 
 ## Steam API usage
@@ -155,6 +163,9 @@ Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
 | --- | --- | --- |
 | `IWishlistService/GetWishlist` | no | wishlist app IDs |
 | `store.steampowered.com/api/storesearch` | no | the + panel's store search |
+| `IStoreQueryService/Query` | no | discounted games by tag, for suggestions (twice a day) |
+| `IStoreService/GetTagList` | no | tag names for suggestion reasons |
+| `IPlayerService/GetOwnedGames` | yes | skip owned games in suggestions |
 | `IStoreBrowseService/GetItems` | no | names, capsule art, prices, sale end dates, review summary, platforms (50 apps per request) |
 | `IPlayerService/GetRecentlyPlayedGames` | yes | playtime |
 | `ISteamUser/GetPlayerSummaries` | yes | your status, friends' status and current game |

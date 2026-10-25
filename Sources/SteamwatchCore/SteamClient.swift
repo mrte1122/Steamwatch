@@ -117,7 +117,8 @@ public struct SteamClient: Sendable {
                 let input: [String: Any] = [
                     "ids": chunk.map { ["appid": $0] },
                     "context": ["language": language, "country_code": countryCode],
-                    "data_request": ["include_assets": true, "include_release": true, "include_reviews": true, "include_platforms": true],
+                    "data_request": ["include_assets": true, "include_release": true, "include_reviews": true, "include_platforms": true,
+                                     "include_tag_count": 8],
                 ]
                 let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
                 let r: GetItemsResponse = try await get("IStoreBrowseService/GetItems/v1/", [("input_json", json)], keyed: false)
@@ -141,7 +142,38 @@ public struct SteamClient: Sendable {
         return (r.items ?? []).compactMap { StoreItem(search: $0) }
     }
 
+    /// Discounted, released games carrying any of `tagIDs`, in Steam's relevance order: the raw
+    /// material for suggestions. No key needed.
+    public func discountedGames(withAnyTag tagIDs: [Int], minDiscount: Int = 30, count: Int = 100) async throws -> [StoreItem] {
+        guard !tagIDs.isEmpty else { return [] }
+        let input: [String: Any] = [
+            "query": ["start": 0, "count": count, "sort": 11,
+                      "filters": ["released_only": true, "type_filters": ["include_games": true],
+                                  "tagids_must_match": [["tagids": tagIDs]],
+                                  "price_filters": ["min_discount_percent": minDiscount]]],
+            "context": ["language": language, "country_code": countryCode],
+            "data_request": ["include_assets": true, "include_reviews": true, "include_platforms": true, "include_tag_count": 8],
+        ]
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
+        let r: GetItemsResponse = try await get("IStoreQueryService/Query/v1/", [("input_json", json)], keyed: false)
+        return (r.response.store_items ?? []).compactMap { StoreItem(wire: $0) }
+    }
+
+    /// Tag names by ID, for explaining suggestions ("Roguelike, Deckbuilding").
+    public func tagNames() async throws -> [Int: String] {
+        struct R: Decodable { struct T: Decodable { let tagid: Int; let name: String }; struct Resp: Decodable { let tags: [T]? }; let response: Resp }
+        let r: R = try await get("IStoreService/GetTagList/v1/", [("language", language)], keyed: false)
+        return Dictionary((r.response.tags ?? []).map { ($0.tagid, $0.name) }, uniquingKeysWith: { a, _ in a })
+    }
+
     // MARK: Player (key required)
+
+    /// Every game the account owns (free ones it has played included), so suggestions skip them.
+    public func ownedGames(steamID: String) async throws -> Set<AppID> {
+        struct R: Decodable { struct G: Decodable { let appid: Int }; struct Resp: Decodable { let games: [G]? }; let response: Resp }
+        let r: R = try await get("IPlayerService/GetOwnedGames/v1/", [("steamid", steamID), ("include_played_free_games", "1")], keyed: true)
+        return Set((r.response.games ?? []).map(\.appid))
+    }
 
     public func resolveVanity(_ name: String) async throws -> String {
         struct R: Decodable { struct Resp: Decodable { let success: Int; let steamid: String? }; let response: Resp }
@@ -299,6 +331,7 @@ struct GetItemsResponse: Decodable {
             let summary_filtered: Summary?
         }
         struct PlatformInfo: Decodable { let windows: Bool?; let mac: Bool?; let linux: Bool?; let steam_deck_compat_category: Int? }
+        struct Tag: Decodable { let tagid: Int; let weight: Int? }
         let id: Int
         let success: Int?
         let name: String?
@@ -307,6 +340,8 @@ struct GetItemsResponse: Decodable {
         let best_purchase_option: Offer?
         let reviews: Reviews?
         let platforms: PlatformInfo?
+        let tags: [Tag]?
+        let tagids: [Int]?
     }
     struct Resp: Decodable { let store_items: [Item]? }
     let response: Resp
@@ -334,7 +369,8 @@ extension StoreItem {
             Platforms(windows: $0.windows ?? true, mac: $0.mac ?? false, linux: $0.linux ?? false,
                       deck: Platforms.Deck(rawValue: $0.steam_deck_compat_category ?? 0) ?? .unknown)
         }
+        let tagIDs = wire.tags.map { $0.sorted { ($0.weight ?? 0) > ($1.weight ?? 0) }.map(\.tagid) } ?? wire.tagids
         self.init(appID: wire.id, name: name, capsuleURL: capsule, price: price, isFree: wire.is_free ?? false,
-                  reviews: reviews, platforms: platforms)
+                  reviews: reviews, platforms: platforms, tagIDs: tagIDs)
     }
 }

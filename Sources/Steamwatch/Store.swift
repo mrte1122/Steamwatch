@@ -47,6 +47,7 @@ final class Store: ObservableObject {
     private let hiddenFile = JSONFile<HiddenGames>(url: directory.appendingPathComponent("hidden.json"))
     private let saleEventFile = JSONFile<SaleEvent>(url: directory.appendingPathComponent("sale-event.json"))
     private let watchlistFile = JSONFile<Watchlist>(url: directory.appendingPathComponent("watchlist.json"))
+    private let suggestionsFile = JSONFile<SuggestionsCache>(url: directory.appendingPathComponent("suggestions.json"))
 
     var steamID: String { UserDefaults.standard.string(forKey: SettingsKey.steamID) ?? "" }
     var apiKey: String? { Keychain.load(.apiKey) }
@@ -70,6 +71,7 @@ final class Store: ObservableObject {
         hidden = hiddenFile.load() ?? HiddenGames()
         saleEvent = saleEventFile.load()
         watchlist = watchlistFile.load() ?? Watchlist()
+        suggestions = suggestionsFile.load()
         if let cached = cacheFile.load() { apply(cached) }
         clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
@@ -128,6 +130,9 @@ final class Store: ObservableObject {
         hidden = HiddenGames()
         saleEvent = nil
         try? FileManager.default.removeItem(at: saleEventFile.url)
+        suggestions = nil
+        owned = nil
+        try? FileManager.default.removeItem(at: suggestionsFile.url)
         deals = []; recentGames = []; me = nil; friendsOnline = []; wishlistCount = 0; items = [:]; wishlist = []
         lastUpdated = nil; lastError = nil; playerError = nil
         try? historyFile.save(history)
@@ -219,6 +224,7 @@ final class Store: ObservableObject {
                                             me: me, friendsOnline: friendsOnline))
         }
         scheduleRetry(after: failed)
+        if failed == nil { Task { await refreshSuggestions() } }
     }
 
     /// Keyed calls are independent of the store: a failure here only affects the playtime and
@@ -393,6 +399,77 @@ final class Store: ObservableObject {
                         minRating: rating > 0 ? rating : nil, maxPriceCents: price > 0 ? price : nil)
     }
 
+    // MARK: Suggestions
+
+    @Published private(set) var suggestions: SuggestionsCache?
+    @Published private(set) var isSuggesting = false
+    /// Why the last suggestion fetch produced nothing, for diagnostics.
+    @Published private(set) var suggestionNote: String?
+    @Published private(set) var dismissed: Set<AppID> = Set(UserDefaults.standard.array(forKey: SettingsKey.dismissedSuggestions) as? [Int] ?? [])
+    /// Owned games, fetched with the API key so suggestions skip them; nil without a key.
+    private var owned: Set<AppID>?
+    private var tagNameCache: [Int: String] = [:]
+
+    /// What the popover shows: last results minus anything since watched, wishlisted or dismissed.
+    var visibleSuggestions: [Suggestion] {
+        (suggestions?.suggestions ?? []).filter { !isWatching($0.id) && !dismissed.contains($0.id) }
+    }
+
+    func tagNames(for s: Suggestion) -> [String] { suggestions?.names(for: s) ?? [] }
+
+    func dismissSuggestion(_ appID: AppID) {
+        dismissed.insert(appID)
+        if !Demo.isActive { UserDefaults.standard.set(Array(dismissed).sorted(), forKey: SettingsKey.dismissedSuggestions) }
+    }
+
+    func resetDismissedSuggestions() {
+        dismissed = []
+        if !Demo.isActive { UserDefaults.standard.set([Int](), forKey: SettingsKey.dismissedSuggestions) }
+    }
+
+    /// Learn taste from the wishlist's store tags, ask Steam for discounted games under the top
+    /// tags, and keep the best fits. Runs at most twice a day; it's 2–3 extra requests.
+    func refreshSuggestions(force: Bool = false) async {
+        // One fetch at a time: a caller arriving mid-fetch waits for it instead of returning early
+        // with stale results.
+        if let running = suggestTask { await running.value; if !force { return } }
+        let t = Task { await performSuggestions(force: force) }
+        suggestTask = t
+        await t.value
+        suggestTask = nil
+    }
+
+    private var suggestTask: Task<Void, Never>?
+
+    private func performSuggestions(force: Bool) async {
+        guard !Demo.isActive else { return }
+        guard !needsSetup else { suggestionNote = "no Steam account connected"; return }
+        guard UserDefaults.standard.bool(forKey: SettingsKey.showSuggestions) else { suggestionNote = "suggestions are off in Settings"; return }
+        if !force, let last = suggestions?.fetchedAt, Date().timeIntervalSince(last) < 12 * 3600 { return }
+        let priorities = Dictionary(wishlist.map { ($0.appID, $0.priority) }, uniquingKeysWith: { a, _ in a })
+        let profile = TasteProfile.build(from: Array(items.values), priorities: priorities)
+        guard !profile.isEmpty else { suggestionNote = "no store tags yet for \(items.count) items"; return }   // store data predates tag fetching
+        isSuggesting = true
+        defer { isSuggesting = false }
+        let client = client()
+        do {
+            if owned == nil, hasAPIKey { owned = try? await client.ownedGames(steamID: steamID) }
+            let candidates = try await client.discountedGames(withAnyTag: profile.top(4))
+            let exclude = Set(wishlist.map(\.appID)).union(watchlist.appIDs).union(dismissed).union(owned ?? [])
+            let ranked = SuggestionEngine.rank(candidates, profile: profile, exclude: exclude)
+            suggestionNote = "top tags \(profile.top(4)), \(candidates.count) candidates, \(exclude.count) excluded, \(ranked.count) kept"
+            if tagNameCache.isEmpty { tagNameCache = (try? await client.tagNames()) ?? [:] }
+            let used = Set(ranked.flatMap(\.matchedTags))
+            let names = Dictionary(uniqueKeysWithValues: used.compactMap { id in tagNameCache[id].map { (String(id), $0) } })
+            let cache = SuggestionsCache(fetchedAt: Date(), suggestions: ranked, tagNames: names)
+            suggestions = cache
+            try? suggestionsFile.save(cache)
+        } catch {
+            // Suggestions are a nice-to-have: keep the last ones and try again next refresh.
+            suggestionNote = error.localizedDescription
+        }
+    }
+
     // MARK: Account
 
     /// Accounts the Steam client on this Mac has signed in with, for one-click setup. Read on demand:
@@ -532,6 +609,7 @@ final class Store: ObservableObject {
         playtime = DemoData.playtime
         me = DemoData.me
         friendsOnline = DemoData.friendsOnline
+        suggestions = DemoData.suggestions
         lastUpdated = Date().addingTimeInterval(-12 * 60)
         lastError = nil
     }
@@ -543,6 +621,7 @@ final class Store: ObservableObject {
         lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count) · hidden: \(hidden.count) · targets: \(targets.cents.count)"
                      + (staleCount > 0 ? " · stale prices: \(staleCount)" : ""))
         if let until = rateLimitedUntil, until > Date() { lines.append("rate limited until: \(until)") }
+        if let s = suggestions { lines.append("suggestions: \(visibleSuggestions.count) shown of \(s.suggestions.count), fetched \(s.fetchedAt)") }
         if let e = saleEvent { lines.append("sale event: since \(e.started), +\(e.extra(deals)) deals" + (e.ends.map { ", most end \($0)" } ?? "")) }
         for d in deals { lines.append("  \(d.item.name): \(Format.price(d.price.finalCents, currency: d.price.currency)) −\(d.price.discountPercent)%\(d.meetsTarget ? " TARGET" : "")\(d.isNewLow ? " LOW" : "")\(d.isFirstSale ? " FIRST" : "")") }
         lines.append("played 2 wk: \(Format.hours(twoWeekMinutes)) · friends online: \(friendsOnline.count)")

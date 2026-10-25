@@ -26,7 +26,7 @@ enum Snapshot {
 
             let savedFilter = d.object(forKey: SettingsKey.dealFilter), savedSort = d.object(forKey: SettingsKey.dealSort)
             let savedRule = [SettingsKey.ruleEnabled, SettingsKey.ruleMinDiscount, SettingsKey.ruleMinRating].map { ($0, d.object(forKey: $0)) }
-            for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating"), ("sale-light", .aqua, "all", "best"), ("search-light", .aqua, "all", "best"), ("picks-light", .aqua, "picks", "best")] {
+            for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating"), ("sale-light", .aqua, "all", "best"), ("search-light", .aqua, "all", "best"), ("picks-light", .aqua, "picks", "best"), ("suggest-light", .aqua, "targets", "best")] {
                 d.set(filter, forKey: SettingsKey.dealFilter)
                 d.set(sort, forKey: SettingsKey.dealSort)
                 if name == "sale-light" { store.previewSaleEvent() } else { store.clearPreviewSaleEvent() }

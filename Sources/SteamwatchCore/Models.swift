@@ -66,11 +66,13 @@ public struct StoreItem: Codable, Equatable, Sendable, Identifiable {
     /// Optional so cache files written before these fields existed still decode.
     public var reviews: ReviewSummary?
     public var platforms: Platforms?
+    /// Store tag IDs, most-voted first (Steam's "user-defined tags"), for taste matching.
+    public var tagIDs: [Int]?
 
     public init(appID: AppID, name: String, capsuleURL: URL?, price: Price?, isFree: Bool = false,
-                reviews: ReviewSummary? = nil, platforms: Platforms? = nil) {
+                reviews: ReviewSummary? = nil, platforms: Platforms? = nil, tagIDs: [Int]? = nil) {
         self.appID = appID; self.name = name; self.capsuleURL = capsuleURL; self.price = price; self.isFree = isFree
-        self.reviews = reviews; self.platforms = platforms
+        self.reviews = reviews; self.platforms = platforms; self.tagIDs = tagIDs
     }
 
     public var id: AppID { appID }
