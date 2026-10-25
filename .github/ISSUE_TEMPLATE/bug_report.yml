@@ -1,0 +1,90 @@
+name: Bug report
+description: Something in Steamwatch is wrong, broken, or shows the wrong prices.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Have an idea instead? Use the **Feature request** form.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead? For a wrong price, include the game's name and what the Steam store shows.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the popover
+        2. Switch to For You
+        3. ...
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part?
+      multiple: true
+      options:
+        - Connecting my Steam account
+        - Wishlist deals or prices
+        - Price limits / targets
+        - Watching a game (+ search)
+        - For You suggestions
+        - Playtime or friends online
+        - Notifications
+        - Menu-bar icon
+        - Opening games in Steam
+        - Updates
+        - Settings
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: steamwatch-version
+    attributes:
+      label: Steamwatch version
+      description: Settings → About
+      placeholder: "0.5.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version and chip
+      placeholder: "macOS 26.1, Apple silicon"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: api-key
+    attributes:
+      label: Is a Steam Web API key set?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional, very helpful)
+      description: |
+        Settings → About → **Copy Diagnostics**, then paste here. It never includes your API key or your Steam ID.
+      render: shell
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before posting
+      options:
+        - label: I've removed anything I don't want public (an API key, my profile URL).
+          required: true

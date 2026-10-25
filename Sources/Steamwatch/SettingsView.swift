@@ -35,6 +35,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.showSuggestions) private var showSuggestions = true
 
     @State private var apiKey = Keychain.load(.apiKey) ?? ""
+    @State private var diagnosticsCopied = false
     @State private var profileStatus: String?
     @State private var resolving = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -308,6 +309,20 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Check for updates automatically (daily)", isOn: $autoUpdate)
+                HStack {
+                    Link(destination: Links.featureRequest) { Label("Suggest a Feature", systemImage: "lightbulb") }
+                    Spacer()
+                    Link(destination: Links.bugReport) { Label("Report a Bug", systemImage: "ladybug") }
+                    Spacer()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(store.diagnosticsText(), forType: .string)
+                        diagnosticsCopied = true
+                    } label: { Label(diagnosticsCopied ? "Copied" : "Copy Diagnostics", systemImage: diagnosticsCopied ? "checkmark" : "doc.on.doc") }
+                        .buttonStyle(.link)
+                        .help("For bug reports. Never includes your API key or Steam ID.")
+                }
+                .font(.caption)
                 HStack {
                     Link("Source on GitHub", destination: Links.repo)
                     Spacer()

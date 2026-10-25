@@ -118,7 +118,8 @@ build/Steamwatch.app/Contents/MacOS/Steamwatch --once --demo   # same with sampl
 build/Steamwatch.app/Contents/MacOS/Steamwatch --search "hades"   # the store search, printed
 build/Steamwatch.app/Contents/MacOS/Steamwatch --suggest           # fetch and print suggestions
 build/Steamwatch.app/Contents/MacOS/Steamwatch --check-key         # HTTP status of each keyed call (never prints the key)
-build/Steamwatch.app/Contents/MacOS/Steamwatch --snapshot docs --demo   # README screenshots
+build/Steamwatch.app/Contents/MacOS/Steamwatch --snapshot docs --demo --art   # README screenshots (--art loads real capsule art)
+swift scripts/make-social-preview.swift .                                   # docs/social-preview.png for the repo card
 ```
 
 Launch with `--demo` to see the UI with sample data and no network access.
@@ -184,6 +185,12 @@ remaining batches are skipped and the app waits 5 minutes, doubling up to 40, be
 Any failed refresh retries at 2, 4, 8, 16 then 30 minute intervals until one succeeds, and the
 popover keeps showing the last good reading throughout. The Refresh button overrides a cooldown.
 Steam is not affiliated with this project.
+
+## Feedback
+
+Ideas and bug reports are welcome: Settings → About has **Suggest a Feature**, **Report a Bug**
+and **Copy Diagnostics** (which never includes your API key or Steam ID), or use
+[the issue forms](https://github.com/mrte1122/Steamwatch/issues/new/choose) directly.
 
 ## License
 

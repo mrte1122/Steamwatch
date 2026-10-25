@@ -651,7 +651,10 @@ final class Store: ObservableObject {
     }
 
     func diagnosticsText() -> String {
-        var lines = ["Steamwatch \(SteamClient.version)", "steamID: \(steamID.isEmpty ? "(not set)" : steamID)", "api key: \(hasAPIKey ? "set" : "none")"]
+        // Shared in public bug reports, so no Steam ID, profile name or key: just whether they're set.
+        let mac = ProcessInfo.processInfo.operatingSystemVersion
+        var lines = ["Steamwatch \(SteamClient.version) · macOS \(mac.majorVersion).\(mac.minorVersion).\(mac.patchVersion)",
+                     "steam account: \(steamID.isEmpty ? "not set" : "connected")", "api key: \(hasAPIKey ? "set" : "none")"]
         if let u = lastUpdated { lines.append("updated: \(u)") }
         lines.append("watching: \(watchlist.count) beyond the wishlist")
         lines.append("wishlist: \(wishlistCount) · on sale: \(deals.count) · hidden: \(hidden.count) · targets: \(targets.cents.count)"

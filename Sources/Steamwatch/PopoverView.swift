@@ -533,7 +533,7 @@ struct DealRow: View {
 struct CapsuleArt: View {
     let url: URL?
     var body: some View {
-        AsyncImage(url: Demo.isActive ? nil : url) { image in
+        AsyncImage(url: Demo.hidesArt ? nil : url) { image in
             image.resizable().aspectRatio(contentMode: .fill)
         } placeholder: {
             RoundedRectangle(cornerRadius: 4).fill(.quaternary)
@@ -608,7 +608,7 @@ struct PlaytimeCard: View {
 struct GameArt: View {
     let appID: AppID
     var body: some View {
-        AsyncImage(url: Demo.isActive ? nil : URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/capsule_231x87.jpg")) { image in
+        AsyncImage(url: Demo.hidesArt ? nil : URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/capsule_231x87.jpg")) { image in
             image.resizable().aspectRatio(contentMode: .fill)
         } placeholder: {
             RoundedRectangle(cornerRadius: 4).fill(.quaternary)

@@ -44,6 +44,9 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
 /// `--demo`: sample data instead of your account. No network, no notifications.
 enum Demo {
     static let isActive = CommandLine.arguments.contains("--demo")
+    /// `--art` with `--demo`: load the demo games' real Steam capsule art (for README screenshots).
+    static let loadsArt = CommandLine.arguments.contains("--art")
+    static var hidesArt: Bool { isActive && !loadsArt }
 }
 
 enum SettingsKey {
@@ -141,6 +144,8 @@ enum SteamLink {
 enum Links {
     static let repo = URL(string: "https://github.com/mrte1122/Steamwatch")!
     static let tip = URL(string: "https://ko-fi.com/mrte90")!
+    static let featureRequest = URL(string: "https://github.com/mrte1122/Steamwatch/issues/new?template=feature_request.yml")!
+    static let bugReport = URL(string: "https://github.com/mrte1122/Steamwatch/issues/new?template=bug_report.yml")!
     static let apiKey = URL(string: "https://steamcommunity.com/dev/apikey")!
     static let privacy = URL(string: "https://steamcommunity.com/my/edit/settings")!
     static let wishlist = URL(string: "https://store.steampowered.com/wishlist/")!

@@ -1,0 +1,38 @@
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Steamwatch! A few answers that cover most questions:
+
+        - **The wishlist comes back empty**: your Steam profile's *Game details* must be public (Steam → Edit Profile → Privacy Settings).
+        - **"Friends online" is empty with a key set**: your friends list is private; that's fine, everything else still works.
+        - **macOS says the app can't be opened**: System Settings → Privacy & Security → **Open Anyway** (first launch only).
+        - **Homebrew says the tap is untrusted**: run `brew trust mrte1122/tap` once.
+
+        Found a bug instead? Please [open an issue](https://github.com/mrte1122/Steamwatch/issues/new/choose).
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and what happened?
+    validations:
+      required: true
+
+  - type: input
+    id: steamwatch-version
+    attributes:
+      label: Steamwatch version
+      description: Settings → About
+      placeholder: "0.5.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional)
+      description: Settings → About → Copy Diagnostics. It never includes your API key or Steam ID.
+      render: shell

@@ -1,0 +1,26 @@
+title: "[Show] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show off your setup, your best Steamwatch catch (a game you got at its lowest), or a script built on its JSON files.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you make or set up?
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Drag an image in. Crop out anything private, like your profile name or API key.
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Config or code (optional)
+      description: Prompt snippets, scripts, or settings others could copy.
+      render: shell

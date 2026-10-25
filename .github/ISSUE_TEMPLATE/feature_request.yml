@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest an idea or an improvement for Steamwatch.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Describe the problem first; the best solution isn't always the first one that comes to mind.
+        If someone already suggested it, add a 👍 to their issue instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What happened that made you wish Steamwatch did something different?
+      placeholder: "A game I wanted dropped to its lowest price during a sale and I only found out after it ended..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What should Steamwatch do? Mockups or screenshots are welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Steamwatch?
+      multiple: true
+      options:
+        - Deals list, filters or sorting
+        - Price limits and notifications
+        - For You suggestions
+        - Watching games outside my wishlist
+        - Playtime or friends
+        - Menu-bar icon
+        - Settings
+        - Windows or Linux version
+        - Something else
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you handle this today?
+      description: Workarounds, other tools (SteamDB, IsThereAnyDeal…), or "I don't".
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd be up for opening a pull request for this.

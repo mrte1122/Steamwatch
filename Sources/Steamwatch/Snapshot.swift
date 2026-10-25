@@ -44,7 +44,8 @@ enum Snapshot {
                 window.appearance = host.appearance
                 window.contentView = host
                 host.layoutSubtreeIfNeeded()
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // Remote art needs longer to arrive than layout does.
+                try? await Task.sleep(nanoseconds: Demo.loadsArt ? 3_000_000_000 : 500_000_000)
                 host.frame = NSRect(origin: .zero, size: host.fittingSize)
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
