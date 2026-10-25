@@ -1,5 +1,5 @@
 import AppKit
-import SteamwatchCore
+import VaporwatchCore
 
 /// Draws the status-item image: a tag glyph plus the number of wishlist games on sale, and/or a
 /// controller glyph plus hours played this week. Monochrome renders as a template image.
@@ -47,7 +47,7 @@ enum MenuBarIconRenderer {
 
         guard !runs.isEmpty else {
             let name = store.lastError != nil && !store.hasData ? "exclamationmark.triangle" : "tag.fill"
-            let img = NSImage(systemSymbolName: name, accessibilityDescription: "Steamwatch")!
+            let img = NSImage(systemSymbolName: name, accessibilityDescription: "Vaporwatch")!
                 .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))!
             img.isTemplate = true
             return img

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// `Steamwatch --snapshot <dir> [--demo]`: render the popover and the menu-bar item to PNGs
+/// `Vaporwatch --snapshot <dir> [--demo]`: render the popover and the menu-bar item to PNGs
 /// without touching the real status bar. Used for README screenshots and visual checks.
 @MainActor
 enum Snapshot {
@@ -66,7 +66,7 @@ enum Snapshot {
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
                     // Not under docs/: Settings shows account details, and docs/ is published.
-                    let out = FileManager.default.temporaryDirectory.appendingPathComponent("steamwatch-settings", isDirectory: true)
+                    let out = FileManager.default.temporaryDirectory.appendingPathComponent("vaporwatch-settings", isDirectory: true)
                     try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
                     try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("settings-\(tab).png"))
                 }

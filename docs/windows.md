@@ -4,11 +4,11 @@ The macOS app is two layers, and only the top one is Apple-specific.
 
 ## What already works on Windows
 
-`Sources/SteamwatchCore` imports nothing but Foundation (plus `FoundationNetworking` on
+`Sources/VaporwatchCore` imports nothing but Foundation (plus `FoundationNetworking` on
 non-Apple platforms, already guarded). With the Swift toolchain for Windows installed:
 
 ```powershell
-swift build --target SteamwatchCore
+swift build --target VaporwatchCore
 swift test
 ```
 
@@ -42,11 +42,11 @@ Everything below is in the core and needs no porting:
 
 ## What the Windows app has to provide
 
-Mirror `Sources/Steamwatch` file by file:
+Mirror `Sources/Vaporwatch` file by file:
 
 | macOS file | Does | Windows equivalent |
 | --- | --- | --- |
-| `Store.swift` | refresh loop, owns the JSON files, calls `DealEngine`, hands alerts to the notifier | same logic; put the files under `%LOCALAPPDATA%\Steamwatch\` |
+| `Store.swift` | refresh loop, owns the JSON files, calls `DealEngine`, hands alerts to the notifier | same logic; put the files under `%LOCALAPPDATA%\Vaporwatch\` |
 | `App.swift` | `NSStatusItem` + `NSPopover` | tray icon (`Shell_NotifyIcon` / WinUI 3 `TaskbarIcon`) + a flyout window |
 | `MenuBarIcon.swift` | draws "tag + count" into the status item | tray icons are 16×16 and can't carry text well: draw the count into the icon bitmap, or show it in the tooltip and flyout |
 | `PopoverView.swift`, `SettingsView.swift` | SwiftUI | WinUI 3 / WPF; the row model is `Deal`, `DayPlaytime`, `PlayerSummary` |

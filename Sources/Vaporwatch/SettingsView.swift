@@ -1,5 +1,5 @@
 import ServiceManagement
-import SteamwatchCore
+import VaporwatchCore
 import SwiftUI
 
 struct SettingsView: View {
@@ -326,10 +326,12 @@ struct SettingsView: View {
                 HStack {
                     Link("Source on GitHub", destination: Links.repo)
                     Spacer()
+                    Link("Privacy Policy", destination: Links.privacyPolicy)
+                    Spacer()
                     Link(destination: Links.tip) { Label("Buy me a coffee", systemImage: "cup.and.saucer.fill") }
                 }
                 .font(.caption)
-                Text("Steamwatch is free and open source, and not affiliated with Valve.").font(.caption).foregroundStyle(.secondary)
+                Text("Vaporwatch is free and open source. Not affiliated with Valve; Steam is a trademark of Valve Corporation.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -338,7 +340,7 @@ struct SettingsView: View {
     private var updateStatus: String {
         switch updater.state {
         case .checking: return "Checking…"
-        case .upToDate: return "Steamwatch is up to date."
+        case .upToDate: return "Vaporwatch is up to date."
         case .noReleases: return "No releases have been published yet."
         case .available(let r): return "Version \(r.version) is available."
         case .installing(let step): return step

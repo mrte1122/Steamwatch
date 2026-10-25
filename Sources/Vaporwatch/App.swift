@@ -1,6 +1,6 @@
 import AppKit
 import Combine
-import SteamwatchCore
+import VaporwatchCore
 import SwiftUI
 
 /// NSStatusItem + NSPopover (rather than MenuBarExtra, which forces template rendering on the
@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var tooltip: String {
-        guard store.hasData else { return "Steamwatch — wishlist sale watcher" }
+        guard store.hasData else { return "Vaporwatch — wishlist sale watcher" }
         var lines = ["\(store.deals.count) of \(store.wishlistCount) wishlist games on sale"]
         for d in store.deals.prefix(5) {
             lines.append("\(d.item.name): \(Format.price(d.price.finalCents, currency: d.price.currency)) (−\(d.price.discountPercent)%)")
@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            // Activate first: as a menu-bar-only app Steamwatch is otherwise never the active app,
+            // Activate first: as a menu-bar-only app Vaporwatch is otherwise never the active app,
             // and the popover's controls then draw in macOS's dimmed "inactive window" style.
             NSApp.activate()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.performClose(nil)
         if settingsWindow == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(store: store, updater: updater)))
-            w.title = "Steamwatch Settings"
+            w.title = "Vaporwatch Settings"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             w.center()

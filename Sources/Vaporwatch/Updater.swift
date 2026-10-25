@@ -32,7 +32,7 @@ enum UpdateError: LocalizedError {
 
 /// Checks GitHub Releases for a newer version and installs it in place.
 ///
-/// Each release ships `Steamwatch.zip` plus `Steamwatch.zip.sig`, an Ed25519 signature made with a
+/// Each release ships `Vaporwatch.zip` plus `Vaporwatch.zip.sig`, an Ed25519 signature made with a
 /// private key that never leaves the maintainer's Mac (see scripts/sign-update.swift). The app
 /// only installs an archive whose signature verifies against the public key below.
 @MainActor
@@ -48,9 +48,9 @@ final class Updater: ObservableObject {
         case failed(String)
     }
 
-    static let repository = "mrte1122/Steamwatch"
+    static let repository = "mrte1122/Vaporwatch"
     static let publicKey = "weUiF6oi+0Pn/7LmKFhKdONfX4Y7DSHKxquUt5WNG48="
-    static let zipName = "Steamwatch.zip"
+    static let zipName = "Vaporwatch.zip"
     static let releasesPage = URL(string: "https://github.com/\(repository)/releases/latest")!
 
     /// Why an in-place update can't work from where this copy is running, or nil if it can.
@@ -58,9 +58,9 @@ final class Updater: ObservableObject {
     /// read-only "App Translocation" copy that can't be replaced.
     nonisolated static var installLocationProblem: String? {
         let url = Bundle.main.bundleURL
-        guard url.pathExtension == "app" else { return "Steamwatch isn't running from an app bundle." }
+        guard url.pathExtension == "app" else { return "Vaporwatch isn't running from an app bundle." }
         if isTranslocated {
-            return "macOS is running a temporary, read-only copy of Steamwatch because it wasn't moved out of the folder it was downloaded to."
+            return "macOS is running a temporary, read-only copy of Vaporwatch because it wasn't moved out of the folder it was downloaded to."
         }
         if installMode == nil {
             return "This account can't change apps in this folder, so updates need an administrator or a manual download."
@@ -75,16 +75,16 @@ final class Updater: ObservableObject {
     /// so the banner can offer to relaunch from there instead of repeating "move it".
     nonisolated static var movedCopyURL: URL? {
         guard isTranslocated else { return nil }
-        let candidates = ["/Applications/Steamwatch.app", NSString(string: "~/Applications/Steamwatch.app").expandingTildeInPath]
+        let candidates = ["/Applications/Vaporwatch.app", NSString(string: "~/Applications/Vaporwatch.app").expandingTildeInPath]
         return candidates.map { URL(fileURLWithPath: $0) }
-            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/MacOS/Steamwatch").path) }
+            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/MacOS/Vaporwatch").path) }
     }
 
     enum InstallMode {
         /// Swap the whole bundle (the folder holding it is writable).
         case replaceBundle
         /// Swap only Contents/. A standard (non-admin) user can't write to /Applications itself,
-        /// but owns the Steamwatch.app they put there, so its contents can still be replaced.
+        /// but owns the Vaporwatch.app they put there, so its contents can still be replaced.
         case replaceContents
     }
 
@@ -170,8 +170,8 @@ final class Updater: ObservableObject {
         let key = SettingsKey.notifiedUpdateVersion
         guard UserDefaults.standard.string(forKey: key) != release.version else { return }
         UserDefaults.standard.set(release.version, forKey: key)
-        notifier?.post(title: "Steamwatch \(release.version) is available",
-                       body: "Open Steamwatch from the menu bar to install it.")
+        notifier?.post(title: "Vaporwatch \(release.version) is available",
+                       body: "Open Vaporwatch from the menu bar to install it.")
     }
 
     // MARK: - GitHub
@@ -183,7 +183,7 @@ final class Updater: ObservableObject {
         // Unauthenticated on purpose: release metadata is public, so no token is sent.
         var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        req.setValue("Steamwatch/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        req.setValue("Vaporwatch/\(currentVersion)", forHTTPHeaderField: "User-Agent")
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.timeoutInterval = 20
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -215,12 +215,12 @@ final class Updater: ObservableObject {
     /// `relaunch` is false for the `--update` CLI mode, which just exits afterwards.
     func install(_ release: ReleaseInfo, relaunch: Bool = true) async {
         let fm = FileManager.default
-        let work = fm.temporaryDirectory.appendingPathComponent("SteamwatchUpdate-\(UUID().uuidString)")
+        let work = fm.temporaryDirectory.appendingPathComponent("VaporwatchUpdate-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: work) }
         do {
             let current = Bundle.main.bundleURL
             if let problem = Self.installLocationProblem {
-                throw UpdateError.install("\(problem) Move Steamwatch to Applications, open it from there, and try again.")
+                throw UpdateError.install("\(problem) Move Vaporwatch to Applications, open it from there, and try again.")
             }
             try fm.createDirectory(at: work, withIntermediateDirectories: true)
 
@@ -237,7 +237,10 @@ final class Updater: ObservableObject {
             let zipFile = work.appendingPathComponent(Self.zipName)
             try zipData.write(to: zipFile)
             try await Self.run("/usr/bin/ditto", ["-x", "-k", zipFile.path, work.path])
-            let newApp = work.appendingPathComponent("Steamwatch.app")
+            // Releases from 0.6.0 also ship a Steamwatch.zip/Steamwatch.app copy for installs from before
+            // the rename; accept whichever the archive holds.
+            guard let newApp = ["Vaporwatch.app", "Steamwatch.app"].map({ work.appendingPathComponent($0) })
+                .first(where: { fm.fileExists(atPath: $0.path) }) else { throw UpdateError.invalidBundle("no app in the archive") }
             try await Self.validate(newApp, expectedVersion: release.version)
 
             state = .installing("Installing…")
@@ -254,8 +257,16 @@ final class Updater: ObservableObject {
                 throw UpdateError.install("\(error.localizedDescription) Download it manually from the releases page instead.")
             }
 
+            // An install from before the rename still sits at …/Steamwatch.app: give it the new name.
+            var installed = current
+            let renamed = current.deletingLastPathComponent().appendingPathComponent("Vaporwatch.app")
+            if current.lastPathComponent != "Vaporwatch.app", Self.installMode == .replaceBundle,
+               !fm.fileExists(atPath: renamed.path), (try? fm.moveItem(at: current, to: renamed)) != nil {
+                installed = renamed
+            }
+
             state = .installing("Restarting…")
-            if relaunch { Self.relaunch(current) }
+            if relaunch { Self.relaunch(installed) }
         } catch {
             state = .failed(error.localizedDescription)
         }

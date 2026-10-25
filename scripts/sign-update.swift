@@ -5,14 +5,18 @@
 //   swift scripts/sign-update.swift public        print the public key
 //   swift scripts/sign-update.swift sign <file>   print the base64 signature of <file>
 //
-// The private key lives OUTSIDE the repo, at ~/.config/steamwatch/update-signing-key
-// (override with STEAMWATCH_SIGNING_KEY). Back it up: without it you can't ship updates
+// The private key lives OUTSIDE the repo, at ~/.config/vaporwatch/update-signing-key
+// (override with VAPORWATCH_SIGNING_KEY). Back it up: without it you can't ship updates
 // that existing installs will accept.
 import CryptoKit
 import Foundation
 
 let env = ProcessInfo.processInfo.environment
-let keyPath = env["STEAMWATCH_SIGNING_KEY"] ?? NSString(string: "~/.config/steamwatch/update-signing-key").expandingTildeInPath
+// Before the rename the key lived in ~/.config/steamwatch; it's the same key, so either works.
+let defaultKey = NSString(string: "~/.config/vaporwatch/update-signing-key").expandingTildeInPath
+let legacyKey = NSString(string: "~/.config/steamwatch/update-signing-key").expandingTildeInPath
+let keyPath = env["VAPORWATCH_SIGNING_KEY"]
+    ?? (FileManager.default.fileExists(atPath: defaultKey) || !FileManager.default.fileExists(atPath: legacyKey) ? defaultKey : legacyKey)
 let args = CommandLine.arguments
 
 func fail(_ msg: String) -> Never {

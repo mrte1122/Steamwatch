@@ -41,7 +41,7 @@ public struct URLSessionTransport: HTTPTransport {
         var req = URLRequest(url: url)
         req.timeoutInterval = 20
         req.cachePolicy = .reloadIgnoringLocalCacheData
-        req.setValue("Steamwatch/\(SteamClient.version) (menu bar wishlist watcher)", forHTTPHeaderField: "User-Agent")
+        req.setValue("Vaporwatch/\(SteamClient.version) (menu bar wishlist watcher)", forHTTPHeaderField: "User-Agent")
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             return (data, (resp as? HTTPURLResponse)?.statusCode ?? -1)

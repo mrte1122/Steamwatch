@@ -1,5 +1,5 @@
 import XCTest
-@testable import SteamwatchCore
+@testable import VaporwatchCore
 
 /// Prices format with the locale's currency symbol; pin en_US so assertions hold everywhere.
 private let pinLocale: Void = { Format.locale = Locale(identifier: "en_US") }()
@@ -478,7 +478,7 @@ final class PriceHistoryTests: XCTestCase {
     }
 
     func testRoundTripsThroughJSONFile() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("steamwatch-test-\(UUID().uuidString).json")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("vaporwatch-test-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let file = JSONFile<PriceHistory>(url: url)
         try file.save(DemoData.history)

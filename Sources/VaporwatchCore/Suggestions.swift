@@ -32,7 +32,7 @@ public struct TasteProfile: Equatable, Sendable {
     public var isEmpty: Bool { weights.isEmpty }
 }
 
-/// A game Steamwatch thinks the user would like, with the tags that made the match.
+/// A game Vaporwatch thinks the user would like, with the tags that made the match.
 public struct Suggestion: Codable, Equatable, Sendable, Identifiable {
     public let item: StoreItem
     public let matchedTags: [Int]

@@ -4,14 +4,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for trying Steamwatch! A few answers that cover most questions:
+        Thanks for trying Vaporwatch! A few answers that cover most questions:
 
         - **The wishlist comes back empty**: your Steam profile's *Game details* must be public (Steam → Edit Profile → Privacy Settings).
         - **"Friends online" is empty with a key set**: your friends list is private; that's fine, everything else still works.
         - **macOS says the app can't be opened**: System Settings → Privacy & Security → **Open Anyway** (first launch only).
         - **Homebrew says the tap is untrusted**: run `brew trust mrte1122/tap` once.
 
-        Found a bug instead? Please [open an issue](https://github.com/mrte1122/Steamwatch/issues/new/choose).
+        Found a bug instead? Please [open an issue](https://github.com/mrte1122/Vaporwatch/issues/new/choose).
 
   - type: textarea
     id: question
@@ -22,9 +22,9 @@ body:
       required: true
 
   - type: input
-    id: steamwatch-version
+    id: vaporwatch-version
     attributes:
-      label: Steamwatch version
+      label: Vaporwatch version
       description: Settings → About
       placeholder: "0.5.0"
     validations:

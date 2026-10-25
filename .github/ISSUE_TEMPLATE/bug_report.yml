@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Steamwatch is wrong, broken, or shows the wrong prices.
+description: Something in Vaporwatch is wrong, broken, or shows the wrong prices.
 labels: ["bug"]
 body:
   - type: markdown
@@ -46,9 +46,9 @@ body:
       required: true
 
   - type: input
-    id: steamwatch-version
+    id: vaporwatch-version
     attributes:
-      label: Steamwatch version
+      label: Vaporwatch version
       description: Settings → About
       placeholder: "0.5.0"
     validations:

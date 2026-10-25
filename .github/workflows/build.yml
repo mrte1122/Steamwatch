@@ -27,11 +27,11 @@ jobs:
       - name: Build the universal app (ad-hoc signed)
         run: ./scripts/build-app.sh
       - name: Self-tests
-        run: build/Steamwatch.app/Contents/MacOS/Steamwatch --selftest
+        run: build/Vaporwatch.app/Contents/MacOS/Vaporwatch --selftest
       - name: Still runs on macOS 14
         run: |
           for arch in arm64 x86_64; do
-            vtool -arch "$arch" -show-build build/Steamwatch.app/Contents/MacOS/Steamwatch | grep -q "minos 14.0" \
+            vtool -arch "$arch" -show-build build/Vaporwatch.app/Contents/MacOS/Vaporwatch | grep -q "minos 14.0" \
               || { echo "::error::$arch slice requires a newer macOS than 14.0"; exit 1; }
           done
 

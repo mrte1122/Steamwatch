@@ -1,5 +1,5 @@
 import AppKit
-import SteamwatchCore
+import VaporwatchCore
 
 @main
 enum Entry {
@@ -7,6 +7,7 @@ enum Entry {
     static func main() {
         setvbuf(stdout, nil, _IOLBF, 0)   // line-buffered, so CLI modes print immediately even when piped
         SettingsKey.registerDefaults()
+        Keychain.migrateLegacy()
         SteamClient.version = Updater.currentVersion
         let args = CommandLine.arguments
 
@@ -15,6 +16,7 @@ enum Entry {
         if let i = args.firstIndex(of: "--search"), i + 1 < args.count { runSearch(args[i + 1]) }
         if args.contains("--suggest") { runSuggest() }
         if args.contains("--check-key") { runCheckKey() }
+        if args.contains("--migrate-keychain") { print(Keychain.migrateLegacy()); exit(0) }
         if args.contains("--check-update") || args.contains("--update") {
             runUpdate(install: args.contains("--update"))
         }
@@ -163,7 +165,7 @@ enum SelfTest {
         let burst = deals.map { DealAlert(kind: .newLow, deal: $0) }
         check(NotificationPlan.plan(burst, totalOnSale: deals.count, event: nil).digest?.alerts.count == 7, "a burst of alerts becomes one digest")
         check(Updater.isVersion("0.10.0", newerThan: "0.9.9") && !Updater.isVersion("0.1.0", newerThan: "0.1.0"), "version comparison")
-        let payload = Data("steamwatch".utf8)
+        let payload = Data("vaporwatch".utf8)
         check((try? Updater.verify(payload, signature: Data("AAAA".utf8))) == nil, "updater rejects a bad signature")
         print(failures == 0 ? "all checks passed" : "\(failures) check(s) failed")
         return failures == 0 ? 0 : 1

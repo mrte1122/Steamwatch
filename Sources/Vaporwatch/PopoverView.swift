@@ -1,5 +1,5 @@
 import Charts
-import SteamwatchCore
+import VaporwatchCore
 import SwiftUI
 
 struct PopoverView: View {
@@ -164,7 +164,7 @@ struct PopoverView: View {
     }
 
     private var title: String {
-        if store.needsSetup || !store.hasData { return "Steamwatch" }
+        if store.needsSetup || !store.hasData { return "Vaporwatch" }
         switch store.deals.count {
         case 0: return "Nothing on sale"
         case 1: return store.watchlist.count > 0 ? "1 game on sale" : "1 wishlist game on sale"
@@ -190,18 +190,18 @@ struct PopoverView: View {
         if Updater.isTranslocated {
             VStack(alignment: .leading, spacing: 6) {
                 if Updater.movedCopyURL != nil {
-                    Label("Steamwatch is in Applications now", systemImage: "checkmark.circle").font(.callout.weight(.medium))
+                    Label("Vaporwatch is in Applications now", systemImage: "checkmark.circle").font(.callout.weight(.medium))
                     Text("This window is still the temporary copy that was opened from Downloads. Relaunch to switch to the one in Applications.")
                         .font(.caption).fixedSize(horizontal: false, vertical: true)
                     Button("Relaunch from Applications") { Updater.relaunchFromMovedCopy() }
                         .controlSize(.small).buttonStyle(.borderedProminent)
                 } else {
-                    Label("Move Steamwatch to Applications", systemImage: "folder.badge.plus").font(.callout.weight(.medium))
-                    Text("It's running from a temporary copy, so updates can't install. Drag Steamwatch from Downloads into Applications; this banner will then offer to relaunch it from there.")
+                    Label("Move Vaporwatch to Applications", systemImage: "folder.badge.plus").font(.callout.weight(.medium))
+                    Text("It's running from a temporary copy, so updates can't install. Drag Vaporwatch from Downloads into Applications; this banner will then offer to relaunch it from there.")
                         .font(.caption).fixedSize(horizontal: false, vertical: true)
                     HStack {
                         Button("Open Applications Folder") { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications")) }
-                        Button("Quit Steamwatch") { NSApp.terminate(nil) }
+                        Button("Quit Vaporwatch") { NSApp.terminate(nil) }
                     }
                     .controlSize(.small)
                 }
@@ -218,7 +218,7 @@ struct PopoverView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill").font(.title3).foregroundStyle(.blue)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Steamwatch \(release.version) is available").font(.callout.weight(.medium))
+                    Text("Vaporwatch \(release.version) is available").font(.callout.weight(.medium))
                     Link("What's new", destination: release.pageURL).font(.caption)
                 }
                 Spacer()
@@ -400,9 +400,9 @@ struct PopoverView: View {
             Spacer()
             Button { SteamLink.open(Links.wishlist) } label: { Image(systemName: "list.star") }.help("Open your Steam wishlist")
             Link(destination: Links.tip) { Image(systemName: "heart.fill").foregroundStyle(.pink) }
-                .help("Enjoying Steamwatch? Buy me a coffee on Ko-fi")
+                .help("Enjoying Vaporwatch? Buy me a coffee on Ko-fi")
             Button { openSettings() } label: { Image(systemName: "gearshape") }.help("Settings")
-            Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("Quit Steamwatch")
+            Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("Quit Vaporwatch")
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
@@ -595,7 +595,7 @@ struct PlaytimeCard: View {
             } else if store.recentGames.isEmpty {
                 Text("Nothing played in the last two weeks.").font(.caption2).foregroundStyle(.secondary)
             } else {
-                Text("Daily bars fill in from today as Steamwatch keeps watching.").font(.caption2).foregroundStyle(.tertiary)
+                Text("Daily bars fill in from today as Vaporwatch keeps watching.").font(.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(10)

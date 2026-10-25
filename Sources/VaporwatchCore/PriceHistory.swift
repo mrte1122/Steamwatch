@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the app has seen each wishlisted game sell for. Steam has no price-history API, so lows
-/// are only as old as the first time Steamwatch looked. Keyed by appID as a string so the JSON
+/// are only as old as the first time Vaporwatch looked. Keyed by appID as a string so the JSON
 /// is a plain object (JSONEncoder turns Int-keyed dictionaries into arrays).
 public struct PriceHistory: Codable, Equatable, Sendable {
     public struct Record: Codable, Equatable, Sendable {

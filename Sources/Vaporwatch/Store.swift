@@ -2,7 +2,7 @@ import Combine
 import AppKit
 import Foundation
 import Network
-import SteamwatchCore
+import VaporwatchCore
 
 /// Owns the refresh loop, the on-disk files and everything the popover shows.
 @MainActor
@@ -38,7 +38,12 @@ final class Store: ObservableObject {
 
     static let directory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Steamwatch", isDirectory: true)
+        let dir = base.appendingPathComponent("Vaporwatch", isDirectory: true)
+        // The app was called Steamwatch before 0.6.0; bring its data along the first time.
+        let legacy = base.appendingPathComponent("Steamwatch", isDirectory: true)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir.path), fm.fileExists(atPath: legacy.path) { try? fm.moveItem(at: legacy, to: dir) }
+        return dir
     }()
     private let cacheFile = JSONFile<CachedState>(url: directory.appendingPathComponent("cache.json"))
     private let historyFile = JSONFile<PriceHistory>(url: directory.appendingPathComponent("price-history.json"))
@@ -100,7 +105,7 @@ final class Store: ObservableObject {
                 }
             }
         }
-        pathMonitor.start(queue: DispatchQueue(label: "Steamwatch.network"))
+        pathMonitor.start(queue: DispatchQueue(label: "Vaporwatch.network"))
         handleNotificationActions()
     }
 
@@ -653,7 +658,7 @@ final class Store: ObservableObject {
     func diagnosticsText() -> String {
         // Shared in public bug reports, so no Steam ID, profile name or key: just whether they're set.
         let mac = ProcessInfo.processInfo.operatingSystemVersion
-        var lines = ["Steamwatch \(SteamClient.version) · macOS \(mac.majorVersion).\(mac.minorVersion).\(mac.patchVersion)",
+        var lines = ["Vaporwatch \(SteamClient.version) · macOS \(mac.majorVersion).\(mac.minorVersion).\(mac.patchVersion)",
                      "steam account: \(steamID.isEmpty ? "not set" : "connected")", "api key: \(hasAPIKey ? "set" : "none")"]
         if let u = lastUpdated { lines.append("updated: \(u)") }
         lines.append("watching: \(watchlist.count) beyond the wishlist")

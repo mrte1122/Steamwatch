@@ -11,7 +11,7 @@ body:
     id: problem
     attributes:
       label: What problem would this solve?
-      description: What happened that made you wish Steamwatch did something different?
+      description: What happened that made you wish Vaporwatch did something different?
       placeholder: "A game I wanted dropped to its lowest price during a sale and I only found out after it ended..."
     validations:
       required: true
@@ -20,14 +20,14 @@ body:
     id: idea
     attributes:
       label: Your idea
-      description: What should Steamwatch do? Mockups or screenshots are welcome.
+      description: What should Vaporwatch do? Mockups or screenshots are welcome.
     validations:
       required: true
 
   - type: dropdown
     id: area
     attributes:
-      label: Which part of Steamwatch?
+      label: Which part of Vaporwatch?
       multiple: true
       options:
         - Deals list, filters or sorting

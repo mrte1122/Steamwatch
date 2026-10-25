@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import SteamwatchCore
+import VaporwatchCore
 import UserNotifications
 
 /// Posts deal alerts, opens the store page when one is clicked, and handles the banner's buttons.

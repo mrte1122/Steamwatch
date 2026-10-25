@@ -49,11 +49,11 @@ NSGraphicsContext.restoreGraphicsState()
 // Left column: icon and name, pitch, footer, all inside the safe area.
 let textWidth = frame.minX - safe.minX - 40
 icon.draw(in: NSRect(x: safe.minX, y: safe.maxY - 120, width: 120, height: 120))
-text("Steamwatch", size: 64, weight: .bold, at: NSPoint(x: safe.minX + 140, y: safe.maxY - 18))
+text("Vaporwatch", size: 64, weight: .bold, at: NSPoint(x: safe.minX + 140, y: safe.maxY - 18))
 text("Never miss a Steam sale.", size: 38, weight: .semibold, at: NSPoint(x: safe.minX, y: safe.maxY - 160), width: textWidth)
 text("Your wishlist's deals, price limits that notify you, new lows and games you might like, in your Mac's menu bar.",
      size: 24, weight: .regular, alpha: 0.78, at: NSPoint(x: safe.minX, y: safe.maxY - 225), width: textWidth)
-text("Free and open source  ·  Notarized  ·  github.com/mrte1122/Steamwatch", size: 19, weight: .medium, alpha: 0.6,
+text("Free and open source  ·  Notarized  ·  github.com/mrte1122/Vaporwatch", size: 19, weight: .medium, alpha: 0.6,
      at: NSPoint(x: safe.minX, y: safe.minY + 26), width: textWidth)
 
 NSGraphicsContext.restoreGraphicsState()

@@ -1,12 +1,12 @@
 #!/bin/bash
-# Builds a universal (Apple silicon + Intel) Steamwatch.app into ./build.
+# Builds a universal (Apple silicon + Intel) Vaporwatch.app into ./build.
 #   --install    also copy it to ~/Applications
-#   --zip        also produce build/Steamwatch.zip for a GitHub release
+#   --zip        also produce build/Vaporwatch.zip for a GitHub release
 #   --notarize   with --zip: submit to Apple's notary service and staple the ticket
 #                (needs a Developer ID certificate and a stored notarytool profile)
 #
 # Signing: uses your "Developer ID Application" certificate when one is in the Keychain
-# (or STEAMWATCH_SIGN_IDENTITY), otherwise falls back to ad-hoc signing.
+# (or VAPORWATCH_SIGN_IDENTITY), otherwise falls back to ad-hoc signing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -21,17 +21,19 @@ for arg in "$@"; do
 done
 
 # notarytool profiles are per Apple ID, so this reuses Quotacat's by default.
-NOTARY_PROFILE="${STEAMWATCH_NOTARY_PROFILE:-quotacat-notary}"
-SIGN_IDENTITY="${STEAMWATCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
+NOTARY_PROFILE="${VAPORWATCH_NOTARY_PROFILE:-quotacat-notary}"
+SIGN_IDENTITY="${VAPORWATCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -F'"' '/Developer ID Application/ { print $2; exit }')}"
 
-VERSION="${STEAMWATCH_VERSION:-$(tr -d '[:space:]' < VERSION)}"
+VERSION="${VAPORWATCH_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+# Kept from the app's original name (Steamwatch): the bundle ID is invisible to users, and changing it
+# would reset everyone's settings and make installed copies reject the update.
 BUNDLE_ID="io.github.mrte1122.Steamwatch"
 # Assemble and sign outside the repo: if it lives in an iCloud-synced folder (like ~/Documents),
 # File Provider keeps adding extended attributes to the bundle and codesign rejects them.
-STAGE="${TMPDIR:-/tmp}/steamwatch-build"
-APP="$STAGE/Steamwatch.app"
+STAGE="${TMPDIR:-/tmp}/vaporwatch-build"
+APP="$STAGE/Vaporwatch.app"
 mkdir -p build
 
 # Build each architecture separately and merge with lipo; separate scratch paths because newer
@@ -39,12 +41,12 @@ mkdir -p build
 BINS=()
 for arch in arm64 x86_64; do
     swift build -c release --arch "$arch" --scratch-path ".build/$arch"
-    BINS+=("$(swift build -c release --arch "$arch" --scratch-path ".build/$arch" --show-bin-path)/Steamwatch")
+    BINS+=("$(swift build -c release --arch "$arch" --scratch-path ".build/$arch" --show-bin-path)/Vaporwatch")
 done
 
 rm -rf "$STAGE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/Steamwatch"
+lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/Vaporwatch"
 
 # App icon: render it if missing, then pack every macOS size into an .icns.
 [[ -f Resources/AppIcon.png ]] || swift scripts/make-icon.swift Resources/AppIcon.png
@@ -61,10 +63,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>Steamwatch</string>
+    <key>CFBundleExecutable</key><string>Vaporwatch</string>
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
-    <key>CFBundleName</key><string>Steamwatch</string>
-    <key>CFBundleDisplayName</key><string>Steamwatch</string>
+    <key>CFBundleName</key><string>Vaporwatch</string>
+    <key>CFBundleDisplayName</key><string>Vaporwatch</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
@@ -88,28 +90,28 @@ else
     SIGNED_AS="ad-hoc"
 fi
 codesign --verify --strict "$APP"
-echo "Built Steamwatch.app ($(lipo -archs "$APP/Contents/MacOS/Steamwatch"), signed: $SIGNED_AS)"
+echo "Built Vaporwatch.app ($(lipo -archs "$APP/Contents/MacOS/Vaporwatch"), signed: $SIGNED_AS)"
 
 if [[ $ZIP -eq 1 ]]; then
-    rm -f build/Steamwatch.zip
-    ditto -c -k --keepParent "$APP" build/Steamwatch.zip
+    rm -f build/Vaporwatch.zip
+    ditto -c -k --keepParent "$APP" build/Vaporwatch.zip
     if [[ $NOTARIZE -eq 1 ]]; then
         echo "Submitting to Apple's notary service (usually 1-5 minutes)…"
-        xcrun notarytool submit build/Steamwatch.zip --keychain-profile "$NOTARY_PROFILE" --wait
+        xcrun notarytool submit build/Vaporwatch.zip --keychain-profile "$NOTARY_PROFILE" --wait
         xcrun stapler staple "$APP"
         spctl --assess --type execute "$APP" && echo "Gatekeeper accepts the notarized app"
-        rm -f build/Steamwatch.zip
-        ditto -c -k --keepParent "$APP" build/Steamwatch.zip
+        rm -f build/Vaporwatch.zip
+        ditto -c -k --keepParent "$APP" build/Vaporwatch.zip
     fi
-    echo "Packaged build/Steamwatch.zip"
+    echo "Packaged build/Vaporwatch.zip"
 fi
 
-rm -rf build/Steamwatch.app
-ditto "$APP" build/Steamwatch.app
+rm -rf build/Vaporwatch.app
+ditto "$APP" build/Vaporwatch.app
 
 if [[ $INSTALL -eq 1 ]]; then
     mkdir -p "$HOME/Applications"
-    rm -rf "$HOME/Applications/Steamwatch.app"
+    rm -rf "$HOME/Applications/Vaporwatch.app"
     cp -R "$APP" "$HOME/Applications/"
-    echo "Installed to ~/Applications/Steamwatch.app"
+    echo "Installed to ~/Applications/Vaporwatch.app"
 fi
