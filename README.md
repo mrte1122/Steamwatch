@@ -117,6 +117,7 @@ build/Steamwatch.app/Contents/MacOS/Steamwatch --once          # fetch once and 
 build/Steamwatch.app/Contents/MacOS/Steamwatch --once --demo   # same with sample data
 build/Steamwatch.app/Contents/MacOS/Steamwatch --search "hades"   # the store search, printed
 build/Steamwatch.app/Contents/MacOS/Steamwatch --suggest           # fetch and print suggestions
+build/Steamwatch.app/Contents/MacOS/Steamwatch --check-key         # HTTP status of each keyed call (never prints the key)
 build/Steamwatch.app/Contents/MacOS/Steamwatch --snapshot docs --demo   # README screenshots
 ```
 
@@ -172,7 +173,7 @@ Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
 | `IStoreBrowseService/GetItems` | no | names, capsule art, prices, sale end dates, review summary, platforms (50 apps per request) |
 | `IPlayerService/GetRecentlyPlayedGames` | yes | playtime |
 | `ISteamUser/GetPlayerSummaries` | yes | your status, friends' status and current game |
-| `ISteamUser/GetFriendList` | yes | friend IDs (public friends lists only) |
+| `ISteamUser/GetFriendList` | yes | friend IDs; answers 401 for a private friends list, which Steamwatch treats as "no friends shown", not a bad key |
 | `ISteamUser/ResolveVanityURL` | yes | custom profile URLs → SteamID64 |
 
 Default refresh is every 30 minutes: 1 wishlist call plus one store call per 50 wishlisted games,

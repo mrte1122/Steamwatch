@@ -550,34 +550,73 @@ struct PlaytimeCard: View {
     var body: some View {
         let days = store.playtime.daily(days: 7, now: store.now)
         let week = days.reduce(0) { $0 + $1.minutes }
-        VStack(alignment: .leading, spacing: 6) {
+        // Daily bars need a day of samples; until then the honest number is Steam's two-week total.
+        let tracking = week > 0 || store.playtime.samples.count > 1 && (store.playtime.samples.first.map { store.now.timeIntervalSince($0.date) > 86_400 } ?? false)
+        let peak = max(60, days.map(\.minutes).max() ?? 0)
+        let recent = store.recentGames.sorted { $0.minutesTwoWeeks > $1.minutesTwoWeeks }.prefix(3)
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Label("Played this week", systemImage: "gamecontroller").font(.caption).foregroundStyle(.secondary)
+                Label(tracking ? "Played this week" : "Played in the last 2 weeks", systemImage: "gamecontroller")
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Text(Format.hours(week)).font(.callout.weight(.medium)).monospacedDigit()
-                if let avg = store.playtime.weeklyAverageMinutes(now: store.now) {
+                Text(Format.hours(tracking ? week : store.twoWeekMinutes)).font(.callout.weight(.medium)).monospacedDigit()
+                if tracking, let avg = store.playtime.weeklyAverageMinutes(now: store.now) {
                     Text("avg \(Format.hours(avg))").font(.caption2).foregroundStyle(.secondary)
-                } else if store.twoWeekMinutes > 0 {
+                } else if tracking, store.twoWeekMinutes > 0 {
                     Text("\(Format.hours(store.twoWeekMinutes)) / 2 wk").font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            Chart(days) { day in
-                BarMark(x: .value("Day", day.day, unit: .day), y: .value("Minutes", max(day.minutes, 2)))
-                    .foregroundStyle(Calendar.current.isDateInToday(day.day) ? Color(ns: Theme.accent) : Color.secondary.opacity(0.35))
-                    .cornerRadius(2)
+            if !recent.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(recent)) { g in
+                        VStack(alignment: .leading, spacing: 2) {
+                            GameArt(appID: g.appID)
+                            Text(g.name).font(.caption2).lineLimit(1)
+                            Text(Format.hours(g.minutesTwoWeeks)).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { SteamLink.open(URL(string: "https://store.steampowered.com/app/\(g.appID)/")!) }
+                        .help("\(g.name): \(Format.hours(g.minutesTwoWeeks)) in the last two weeks, \(Format.hours(g.minutesForever)) in total")
+                    }
+                    ForEach(0..<(3 - recent.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+                }
             }
-            .chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(height: 32)
-            if let top = store.playtime.mostPlayed(now: store.now) {
-                Text("Most played: \(top.name) · \(Format.hours(top.minutes))").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            } else if let top = store.recentGames.max(by: { $0.minutesTwoWeeks < $1.minutesTwoWeeks }) {
-                Text("Recent: \(top.name) · \(Format.hours(top.minutesTwoWeeks)) in 2 wk").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            if tracking {
+                Chart(days) { day in
+                    BarMark(x: .value("Day", day.day, unit: .day), y: .value("Minutes", day.minutes))
+                        .foregroundStyle(Calendar.current.isDateInToday(day.day) ? Color(ns: Theme.accent) : Color.secondary.opacity(0.35))
+                        .cornerRadius(2)
+                }
+                // A fixed floor keeps quiet days looking quiet instead of stretching to fill.
+                .chartYScale(domain: 0...peak)
+                .chartXAxis(.hidden).chartYAxis(.hidden)
+                .frame(height: 28)
+            } else if store.recentGames.isEmpty {
+                Text("Nothing played in the last two weeks.").font(.caption2).foregroundStyle(.secondary)
             } else {
-                Text("Daily bars fill in as Steamwatch keeps watching.").font(.caption2).foregroundStyle(.secondary)
+                Text("Daily bars fill in from today as Steamwatch keeps watching.").font(.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(10)
         .card()
+    }
+}
+
+/// Steam's capsule art for any app, straight from its CDN by ID (recently played games don't come
+/// with store data). Placeholder while loading, or in demo mode.
+struct GameArt: View {
+    let appID: AppID
+    var body: some View {
+        AsyncImage(url: Demo.isActive ? nil : URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/capsule_231x87.jpg")) { image in
+            image.resizable().aspectRatio(contentMode: .fill)
+        } placeholder: {
+            RoundedRectangle(cornerRadius: 4).fill(.quaternary)
+                .overlay(Image(systemName: "gamecontroller").font(.caption2).foregroundStyle(.tertiary))
+        }
+        .frame(height: 36)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 

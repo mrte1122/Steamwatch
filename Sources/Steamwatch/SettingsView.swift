@@ -119,6 +119,11 @@ struct SettingsView: View {
                 }
                 Toggle("Playtime section", isOn: $showPlaytime)
                 Toggle("Friends online", isOn: $showFriends)
+                    .help(store.friendsPrivate ? "Your friends list is private on Steam, so nobody can be shown." : "Needs a Web API key and a public friends list.")
+                if store.friendsPrivate, showFriends {
+                    Text("Your Steam friends list is private, so friends online stays empty. Steam → Edit Profile → Privacy → Friends List: Public to change that.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("“You might like” suggestions", isOn: $showSuggestions)
                     .onChange(of: showSuggestions) { _, on in if on { Task { await store.refreshSuggestions(force: true) } } }
                     .help("Discounted, well-reviewed games that share tags with your wishlist. Checked twice a day.")

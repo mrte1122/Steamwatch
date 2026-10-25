@@ -247,15 +247,24 @@ final class Store: ObservableObject {
         } catch {
             errors.append(error.localizedDescription)
         }
+        // The library changes rarely; every six hours keeps owned games out of For You.
+        if owned == nil || Date().timeIntervalSince(ownedFetchedAt) > 6 * 3600 {
+            if let games = try? await client.ownedGames(steamID: id) { owned = games; ownedFetchedAt = Date() }
+        }
         if UserDefaults.standard.bool(forKey: SettingsKey.showFriends) {
             do {
                 let ids = try await client.friendIDs(steamID: id)
+                friendsPrivate = false
                 let online = ids.isEmpty ? [] : try await client.playerSummaries(ids).filter(\.isOnline)
                 // In-game friends first, then alphabetical.
                 friendsOnline = online.sorted { a, b in
                     if (a.currentGame == nil) != (b.currentGame == nil) { return a.currentGame != nil }
                     return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
                 }
+            } catch SteamError.privateFriends {
+                // Not an error: the key works, the user just keeps friends private.
+                friendsPrivate = true
+                friendsOnline = []
             } catch {
                 errors.append(error.localizedDescription)
             }
@@ -410,6 +419,9 @@ final class Store: ObservableObject {
     @Published private(set) var dismissed: Set<AppID> = Set(UserDefaults.standard.array(forKey: SettingsKey.dismissedSuggestions) as? [Int] ?? [])
     /// Owned games, fetched with the API key so suggestions skip them; nil without a key.
     private var owned: Set<AppID>?
+    private var ownedFetchedAt = Date.distantPast
+    /// GetFriendList refused: the friends list is private (the key itself is fine).
+    @Published private(set) var friendsPrivate = false
     private var tagNameCache: [Int: String] = [:]
 
     /// Games the user marked "I already own this"; works without an API key.
@@ -432,6 +444,7 @@ final class Store: ObservableObject {
     func saveAPIKey(_ key: String) {
         Keychain.save(key.trimmingCharacters(in: .whitespacesAndNewlines), .apiKey)
         owned = nil
+        ownedFetchedAt = .distantPast
         Task {
             await refresh(force: true)
             await refreshSuggestions(force: true)

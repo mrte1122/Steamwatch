@@ -14,6 +14,7 @@ enum Entry {
         if args.contains("--once") { runOnce() }
         if let i = args.firstIndex(of: "--search"), i + 1 < args.count { runSearch(args[i + 1]) }
         if args.contains("--suggest") { runSuggest() }
+        if args.contains("--check-key") { runCheckKey() }
         if args.contains("--check-update") || args.contains("--update") {
             runUpdate(install: args.contains("--update"))
         }
@@ -42,6 +43,34 @@ enum Entry {
 }
 
 extension Entry {
+    /// `--check-key`: try each call that needs the Web API key and print its HTTP status. The key
+    /// itself is never printed.
+    @MainActor
+    static func runCheckKey() -> Never {
+        let store = Store()
+        Task { @MainActor in
+            guard let key = store.apiKey, !key.isEmpty else { print("no API key saved"); exit(1) }
+            let id = store.steamID
+            print("key: \(key.count) characters, \(key.allSatisfy(\.isHexDigit) ? "hex" : "NOT hex (expected 32 hex characters)")")
+            let calls: [(String, [(String, String)])] = [
+                ("IPlayerService/GetRecentlyPlayedGames/v1/", [("steamid", id)]),
+                ("ISteamUser/GetPlayerSummaries/v2/", [("steamids", id)]),
+                ("ISteamUser/GetFriendList/v1/", [("steamid", id), ("relationship", "friend")]),
+                ("IPlayerService/GetOwnedGames/v1/", [("steamid", id), ("include_played_free_games", "1")]),
+            ]
+            for (path, query) in calls {
+                var comps = URLComponents(url: SteamClient.api.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+                comps.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) } + [URLQueryItem(name: "key", value: key)]
+                let (data, status) = (try? await URLSessionTransport().get(comps.url!)) ?? (Data(), -1)
+                let body = String(decoding: data.prefix(80), as: UTF8.self).replacingOccurrences(of: key, with: "<key>")
+                print("\(status)\t\(path)\t\(status == 200 ? "\(data.count) bytes" : body)")
+            }
+            exit(0)
+        }
+        RunLoop.main.run()
+        exit(0)
+    }
+
     /// `--suggest`: refresh, then fetch and print suggestions (ignores the twice-a-day limit).
     @MainActor
     static func runSuggest() -> Never {

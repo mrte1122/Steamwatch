@@ -9,6 +9,7 @@ public enum SteamError: Error, LocalizedError, Equatable {
     case badAPIKey
     case missingAPIKey
     case privateProfile
+    case privateFriends
     case vanityNotFound
     case decoding(String)
     case transport(String)
@@ -20,6 +21,7 @@ public enum SteamError: Error, LocalizedError, Equatable {
         case .badAPIKey: return "Steam rejected the API key."
         case .missingAPIKey: return "This needs a Steam Web API key."
         case .privateProfile: return "The profile or its game details are private."
+        case .privateFriends: return "Your friends list is private, so friends online can't be shown."
         case .vanityNotFound: return "No Steam profile has that custom URL."
         case .decoding(let m): return "Unexpected response from Steam (\(m))."
         case .transport(let m): return m
@@ -226,13 +228,17 @@ public struct SteamClient: Sendable {
                               struct L: Decodable { let friends: [F] }
                               struct Resp: Decodable { let friendslist: L? }; let friendslist: L? }
         // Steam wraps this one differently from the IPlayerService calls: {"friendslist":{"friends":[…]}}.
-        let r: R = try await get("ISteamUser/GetFriendList/v1/", [("steamid", steamID), ("relationship", "friend")], keyed: true)
+        let r: R = try await get("ISteamUser/GetFriendList/v1/", [("steamid", steamID), ("relationship", "friend")], keyed: true,
+                                 unauthorized: .privateFriends)
         return (r.friendslist?.friends ?? []).map(\.steamid)
     }
 
     // MARK: Plumbing
 
-    private func get<T: Decodable>(_ path: String, _ query: [(String, String)], keyed: Bool, base: URL = SteamClient.api) async throws -> T {
+    /// `unauthorized` is what a 401/403 means for this call: usually a bad key, but GetFriendList
+    /// answers 401 for a valid key when the friends list is private.
+    private func get<T: Decodable>(_ path: String, _ query: [(String, String)], keyed: Bool, base: URL = SteamClient.api,
+                                   unauthorized: SteamError = .badAPIKey) async throws -> T {
         var items = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         if keyed {
             guard let apiKey, !apiKey.isEmpty else { throw SteamError.missingAPIKey }
@@ -258,7 +264,7 @@ public struct SteamClient: Sendable {
                 case 200..<300:
                     do { return try JSONDecoder().decode(T.self, from: data) }
                     catch { throw SteamError.decoding(String(describing: error).prefix(120).description) }
-                case 401 where keyed, 403 where keyed: throw SteamError.badAPIKey
+                case 401 where keyed, 403 where keyed: throw unauthorized
                 case 401, 403: throw SteamError.privateProfile
                 case 429: failure = .rateLimited
                 case 500...599: failure = .http(status)

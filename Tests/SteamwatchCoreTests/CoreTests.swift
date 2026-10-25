@@ -572,6 +572,10 @@ final class WireDecodingTests: XCTestCase {
         do { _ = try await noKey.recentlyPlayed(steamID: "1"); XCTFail() } catch { XCTAssertEqual(error as? SteamError, .missingAPIKey) }
         let badKey = SteamClient(transport: Stub(status: 403), apiKey: "x", retryDelays: [])
         do { _ = try await badKey.recentlyPlayed(steamID: "1"); XCTFail() } catch { XCTAssertEqual(error as? SteamError, .badAPIKey) }
+        let privateFriends = SteamClient(transport: Stub(status: 401), apiKey: "x", retryDelays: [])
+        do { _ = try await privateFriends.friendIDs(steamID: "1"); XCTFail() } catch {
+            XCTAssertEqual(error as? SteamError, .privateFriends, "GetFriendList's 401 means a private list, not a bad key")
+        }
         let limited = SteamClient(transport: Stub(status: 429), retryDelays: [0])
         do { _ = try await limited.wishlist(steamID: "1"); XCTFail() } catch { XCTAssertEqual(error as? SteamError, .rateLimited) }
     }
