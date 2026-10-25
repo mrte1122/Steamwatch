@@ -64,6 +64,9 @@ enum SettingsKey {
     static let sentAlerts = "sentAlerts"                  // [String] DealAlert keys
     static let dealFilter = "dealFilter"                  // DealFilter raw value
     static let dealSort = "dealSort"                      // DealSort raw value
+    static let autoUpdateCheck = "autoUpdateCheck"
+    static let lastUpdateCheck = "lastUpdateCheck"        // Date
+    static let notifiedUpdateVersion = "notifiedUpdateVersion"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -83,12 +86,14 @@ enum SettingsKey {
             notifyAnySale: false,
             dealFilter: "all",
             dealSort: "best",
+            autoUpdateCheck: true,
         ])
     }
 }
 
 enum Links {
     static let repo = URL(string: "https://github.com/mrte1122/Steamwatch")!
+    static let tip = URL(string: "https://ko-fi.com/mrte90")!
     static let apiKey = URL(string: "https://steamcommunity.com/dev/apikey")!
     static let privacy = URL(string: "https://steamcommunity.com/my/edit/settings")!
     static let wishlist = URL(string: "https://store.steampowered.com/wishlist/")!

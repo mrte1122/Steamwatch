@@ -61,6 +61,26 @@ build/Steamwatch.app/Contents/MacOS/Steamwatch --snapshot docs --demo   # README
 
 Launch with `--demo` to see the UI with sample data and no network access.
 
+## Updates and releases
+
+Steamwatch checks GitHub Releases once a day (Settings → About to turn that off or check now) and
+installs in place. Each release ships `Steamwatch.zip` and `Steamwatch.zip.sig`; the app installs
+only a zip whose Ed25519 signature matches the public key compiled into `Updater.swift`, whose
+bundle ID and version match, and that's signed by the same Developer ID team as the running copy.
+
+To publish (maintainer only):
+
+```bash
+./scripts/release.sh 0.2.0 "What changed"
+```
+
+That bumps `VERSION`, builds, notarizes, signs the zip with the private key at
+`~/.config/steamwatch/update-signing-key` (never committed), tags, pushes, creates the GitHub
+release, and bumps `Casks/steamwatch.rb` in `mrte1122/homebrew-tap` if it exists. Lose the private
+key and existing installs can no longer auto-update.
+
+`Steamwatch --check-update` / `--update` do the same check and install from the terminal.
+
 ## Project layout
 
 ```
@@ -70,6 +90,8 @@ Sources/Steamwatch       macOS app: NSStatusItem + NSPopover, SwiftUI views, Key
                          UserNotifications, Settings window.
 Tests/SteamwatchCoreTests
 scripts/build-app.sh     universal build, signing, notarization, zip
+scripts/release.sh       version bump, signed zip, tag, GitHub release, Homebrew cask bump
+scripts/sign-update.swift  Ed25519 key generation and update signing
 docs/windows.md          what a Windows port needs
 ```
 

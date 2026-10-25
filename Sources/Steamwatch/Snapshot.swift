@@ -28,7 +28,7 @@ enum Snapshot {
             for (name, appearanceName, filter, sort) in [("light", NSAppearance.Name.aqua, "all", "best"), ("dark", .darkAqua, "all", "best"), ("targets-light", .aqua, "targets", "best"), ("rated-light", .aqua, "all", "rating")] {
                 d.set(filter, forKey: SettingsKey.dealFilter)
                 d.set(sort, forKey: SettingsKey.dealSort)
-                let view = PopoverView(store: store, openSettings: {})
+                let view = PopoverView(store: store, updater: Updater(), openSettings: {})
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 let host = NSHostingView(rootView: view)

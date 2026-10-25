@@ -4,6 +4,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var store: Store
+    @ObservedObject var updater: Updater
     var openSettings: () -> Void
 
     @AppStorage(SettingsKey.dealFilter) private var filterRaw = DealFilter.all.rawValue
@@ -23,6 +24,8 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            locationBanner
+            updateBanner
             if store.needsSetup {
                 SetupCard(openSettings: openSettings)
             } else {
@@ -75,6 +78,76 @@ struct PopoverView: View {
         if store.hidden.count > 0 { parts.append("\(store.hidden.count) hidden") }
         if store.staleCount > 0 { parts.append("\(store.staleCount) stale") }
         return parts.isEmpty ? (store.isRefreshing ? "Checking the store…" : "Wishlist sale watcher") : parts.joined(separator: " · ")
+    }
+
+    /// Updates can't install from a translocated copy (opened straight from Downloads), so say how
+    /// to fix it up front. Other "can't update here" cases don't need a banner: the update banner
+    /// offers a download instead.
+    @ViewBuilder private var locationBanner: some View {
+        if Updater.isTranslocated {
+            VStack(alignment: .leading, spacing: 6) {
+                if Updater.movedCopyURL != nil {
+                    Label("Steamwatch is in Applications now", systemImage: "checkmark.circle").font(.callout.weight(.medium))
+                    Text("This window is still the temporary copy that was opened from Downloads. Relaunch to switch to the one in Applications.")
+                        .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Button("Relaunch from Applications") { Updater.relaunchFromMovedCopy() }
+                        .controlSize(.small).buttonStyle(.borderedProminent)
+                } else {
+                    Label("Move Steamwatch to Applications", systemImage: "folder.badge.plus").font(.callout.weight(.medium))
+                    Text("It's running from a temporary copy, so updates can't install. Drag Steamwatch from Downloads into Applications; this banner will then offer to relaunch it from there.")
+                        .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button("Open Applications Folder") { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications")) }
+                        Button("Quit Steamwatch") { NSApp.terminate(nil) }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder private var updateBanner: some View {
+        switch updater.state {
+        case .available(let release):
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill").font(.title3).foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Steamwatch \(release.version) is available").font(.callout.weight(.medium))
+                    Link("What's new", destination: release.pageURL).font(.caption)
+                }
+                Spacer()
+                if Updater.installLocationProblem == nil {
+                    Button("Update") { Task { await updater.install(release) } }
+                        .controlSize(.small).buttonStyle(.borderedProminent)
+                } else {
+                    Link("Download", destination: release.pageURL).controlSize(.small)
+                }
+            }
+            .padding(8)
+            .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        case .installing(let step):
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(step).font(.callout)
+                Spacer()
+            }
+            .padding(8)
+            .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Update failed").font(.caption.bold())
+                Text(message).font(.caption).fixedSize(horizontal: false, vertical: true)
+                Link("Open the releases page", destination: Updater.releasesPage).font(.caption)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        default:
+            EmptyView()
+        }
     }
 
     @ViewBuilder private var errorBanner: some View {

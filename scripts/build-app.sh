@@ -20,8 +20,8 @@ for arg in "$@"; do
     esac
 done
 
-# notarytool profiles are per Apple ID, so Quotacat's works here too: STEAMWATCH_NOTARY_PROFILE=quotacat-notary
-NOTARY_PROFILE="${STEAMWATCH_NOTARY_PROFILE:-steamwatch-notary}"
+# notarytool profiles are per Apple ID, so this reuses Quotacat's by default.
+NOTARY_PROFILE="${STEAMWATCH_NOTARY_PROFILE:-quotacat-notary}"
 SIGN_IDENTITY="${STEAMWATCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -F'"' '/Developer ID Application/ { print $2; exit }')}"
 

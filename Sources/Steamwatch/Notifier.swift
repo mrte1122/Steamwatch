@@ -22,13 +22,18 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func post(_ alert: DealAlert) {
+        post(title: alert.title, body: alert.body, url: alert.deal.item.storeURL, id: alert.key)
+    }
+
+    /// `url` opens when the notification is clicked.
+    func post(title: String, body: String, url: URL? = nil, id: String = UUID().uuidString) {
         guard available, !Demo.isActive else { return }
         let content = UNMutableNotificationContent()
-        content.title = alert.title
-        content.body = alert.body
+        content.title = title
+        content.body = body
         content.sound = .default
-        content.userInfo = ["url": alert.deal.item.storeURL.absoluteString]
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: alert.key, content: content, trigger: nil))
+        if let url { content.userInfo = ["url": url.absoluteString] }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

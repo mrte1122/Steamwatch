@@ -4,6 +4,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: Store
+    @ObservedObject var updater: Updater
+    @AppStorage(SettingsKey.autoUpdateCheck) private var autoUpdate = true
 
     @AppStorage(SettingsKey.profileInput) private var profileInput = ""
     @AppStorage(SettingsKey.steamID) private var steamID = ""
@@ -134,18 +136,44 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
+            Section("About") {
+                LabeledContent("Version", value: Updater.currentVersion)
                 HStack {
-                    Text("Steamwatch \(SteamClient.version)").foregroundStyle(.secondary)
+                    Text(updateStatus).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Link("Source", destination: Links.repo)
+                    if let release = updater.availableRelease {
+                        Button("Install \(release.version)") { Task { await updater.install(release) } }
+                    } else {
+                        Button("Check for Updates") { Task { await updater.check(userInitiated: true) } }
+                            .disabled(updater.state == .checking)
+                    }
+                }
+                Toggle("Check for updates automatically (daily)", isOn: $autoUpdate)
+                HStack {
+                    Link("Source on GitHub", destination: Links.repo)
+                    Spacer()
+                    Link(destination: Links.tip) { Label("Buy me a coffee", systemImage: "cup.and.saucer.fill") }
                 }
                 .font(.caption)
+                Text("Steamwatch is free and open source, and not affiliated with Valve.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var updateStatus: String {
+        switch updater.state {
+        case .checking: return "Checking…"
+        case .upToDate: return "Steamwatch is up to date."
+        case .noReleases: return "No releases have been published yet."
+        case .available(let r): return "Version \(r.version) is available."
+        case .installing(let step): return step
+        case .failed(let message): return message
+        case .idle:
+            return updater.lastChecked.map { "Last checked \($0.formatted(.relative(presentation: .named)))." } ?? "Not checked yet."
+        }
     }
 
     private func name(_ appID: AppID) -> String { store.items[appID]?.name ?? "App \(appID)" }
