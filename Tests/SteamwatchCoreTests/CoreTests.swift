@@ -198,11 +198,60 @@ final class WireDecodingTests: XCTestCase {
             let status: Int
             func get(_ url: URL) async throws -> (Data, Int) { (Data("{}".utf8), status) }
         }
-        let noKey = SteamClient(transport: Stub(status: 200))
+        let noKey = SteamClient(transport: Stub(status: 200), retryDelays: [])
         do { _ = try await noKey.recentlyPlayed(steamID: "1"); XCTFail() } catch { XCTAssertEqual(error as? SteamError, .missingAPIKey) }
-        let badKey = SteamClient(transport: Stub(status: 403), apiKey: "x")
+        let badKey = SteamClient(transport: Stub(status: 403), apiKey: "x", retryDelays: [])
         do { _ = try await badKey.recentlyPlayed(steamID: "1"); XCTFail() } catch { XCTAssertEqual(error as? SteamError, .badAPIKey) }
-        let limited = SteamClient(transport: Stub(status: 429))
+        let limited = SteamClient(transport: Stub(status: 429), retryDelays: [0])
         do { _ = try await limited.wishlist(steamID: "1"); XCTFail() } catch { XCTAssertEqual(error as? SteamError, .rateLimited) }
+    }
+
+    /// Answers each request from a scripted list of statuses, in order, and counts calls.
+    final class Script: HTTPTransport, @unchecked Sendable {
+        var statuses: [Int]
+        var calls = 0
+        let body: String
+        init(_ statuses: [Int], body: String = #"{"response":{"items":[{"appid":1}]}}"#) { self.statuses = statuses; self.body = body }
+        func get(_ url: URL) async throws -> (Data, Int) {
+            calls += 1
+            let s = statuses.isEmpty ? 200 : statuses.removeFirst()
+            if s < 0 { throw SteamError.transport("connection dropped") }
+            return (Data(body.utf8), s)
+        }
+    }
+
+    func testRetriesRateLimitsServerErrorsAndDrops() async throws {
+        let script = Script([429, 503, -1, 200])
+        let client = SteamClient(transport: script, retryDelays: [0, 0, 0])
+        let items = try await client.wishlist(steamID: "1")
+        XCTAssertEqual(items.map(\.appID), [1])
+        XCTAssertEqual(script.calls, 4)
+
+        let exhausted = Script([429, 429, 429])
+        do { _ = try await SteamClient(transport: exhausted, retryDelays: [0, 0]).wishlist(steamID: "1"); XCTFail() }
+        catch { XCTAssertEqual(error as? SteamError, .rateLimited); XCTAssertEqual(exhausted.calls, 3) }
+
+        let fatal = Script([404])
+        do { _ = try await SteamClient(transport: fatal, retryDelays: [0, 0]).wishlist(steamID: "1"); XCTFail() }
+        catch { XCTAssertEqual(error as? SteamError, .http(404)); XCTAssertEqual(fatal.calls, 1, "4xx is not retried") }
+    }
+
+    func testPartialStoreFetchKeepsGoodBatchesAndStopsAfterRateLimit() async {
+        let one = #"{"response":{"store_items":[{"id":1,"success":1,"name":"One"}]}}"#
+        // Batch 1 ok, batch 2 a persistent 500, batch 3 ok: two of three batches come back.
+        let flaky = Script([200, 500, 500, 200], body: one)
+        let r = await SteamClient(transport: flaky, retryDelays: [0]).storeItems(partial: Array(1...150))
+        XCTAssertEqual(r.items.count, 2)
+        XCTAssertEqual(r.missing, Array(51...100))
+        XCTAssertEqual(r.error, .http(500))
+        XCTAssertFalse(r.isComplete)
+
+        // A rate limit on batch 1 stops the run: batches 2 and 3 are reported missing untouched.
+        let limited = Script([429, 429], body: one)
+        let l = await SteamClient(transport: limited, retryDelays: [0]).storeItems(partial: Array(1...150))
+        XCTAssertTrue(l.items.isEmpty)
+        XCTAssertEqual(l.missing.count, 150)
+        XCTAssertEqual(l.error, .rateLimited)
+        XCTAssertEqual(limited.calls, 2)
     }
 }

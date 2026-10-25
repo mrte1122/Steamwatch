@@ -71,6 +71,7 @@ struct PopoverView: View {
         if let u = store.lastUpdated { parts.append("updated \(Format.relative(u, now: store.now))") }
         if store.wishlistCount > 0 { parts.append("\(store.wishlistCount) on wishlist") }
         if store.hidden.count > 0 { parts.append("\(store.hidden.count) hidden") }
+        if store.staleCount > 0 { parts.append("\(store.staleCount) stale") }
         return parts.isEmpty ? (store.isRefreshing ? "Checking the store…" : "Wishlist sale watcher") : parts.joined(separator: " · ")
     }
 

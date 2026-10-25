@@ -61,10 +61,25 @@ public struct SteamClient: Sendable {
     public var apiKey: String?
     public var countryCode: String
     public var language: String
+    /// Waits before each retry of a rate-limited, 5xx or transport-failed request; empty disables retries.
+    public var retryDelays: [TimeInterval]
 
     public init(transport: HTTPTransport = URLSessionTransport(), apiKey: String? = nil,
-                countryCode: String = "US", language: String = "english") {
+                countryCode: String = "US", language: String = "english", retryDelays: [TimeInterval] = [2, 6]) {
         self.transport = transport; self.apiKey = apiKey; self.countryCode = countryCode; self.language = language
+        self.retryDelays = retryDelays
+    }
+
+    /// What `storeItems(partial:)` could and couldn't fetch.
+    public struct StoreResult: Sendable {
+        public var items: [StoreItem]
+        /// App IDs whose batch failed even after retries.
+        public var missing: [AppID]
+        public var error: SteamError?
+        public var isComplete: Bool { missing.isEmpty }
+        public init(items: [StoreItem] = [], missing: [AppID] = [], error: SteamError? = nil) {
+            self.items = items; self.missing = missing; self.error = error
+        }
     }
 
     // MARK: Wishlist and store (no key)
@@ -80,19 +95,37 @@ public struct SteamClient: Sendable {
     }
 
     /// Names, capsule art and the best current price for many apps at once (50 per request).
+    /// Throws on the first batch that fails after retries; see `storeItems(partial:)` to keep going.
     public func storeItems(_ ids: [AppID]) async throws -> [StoreItem] {
-        var out: [StoreItem] = []
+        let r = await storeItems(partial: ids)
+        if let e = r.error { throw e }
+        return r.items
+    }
+
+    /// Like `storeItems`, but a failed batch is skipped and reported instead of aborting the rest,
+    /// so a rate limit on batch 12 of 16 still yields 15 batches. After a rate limit the remaining
+    /// batches aren't attempted: hammering on would only lengthen the ban.
+    public func storeItems(partial ids: [AppID]) async -> StoreResult {
+        var result = StoreResult(items: [], missing: [], error: nil)
+        var rateLimited = false
         for chunk in stride(from: 0, to: ids.count, by: 50).map({ Array(ids[$0..<min($0 + 50, ids.count)]) }) {
-            let input: [String: Any] = [
-                "ids": chunk.map { ["appid": $0] },
-                "context": ["language": language, "country_code": countryCode],
-                "data_request": ["include_assets": true, "include_release": true],
-            ]
-            let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
-            let r: GetItemsResponse = try await get("IStoreBrowseService/GetItems/v1/", [("input_json", json)], keyed: false)
-            out += (r.response.store_items ?? []).compactMap { StoreItem(wire: $0) }
+            if rateLimited { result.missing += chunk; continue }
+            do {
+                let input: [String: Any] = [
+                    "ids": chunk.map { ["appid": $0] },
+                    "context": ["language": language, "country_code": countryCode],
+                    "data_request": ["include_assets": true, "include_release": true],
+                ]
+                let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
+                let r: GetItemsResponse = try await get("IStoreBrowseService/GetItems/v1/", [("input_json", json)], keyed: false)
+                result.items += (r.response.store_items ?? []).compactMap { StoreItem(wire: $0) }
+            } catch {
+                result.missing += chunk
+                result.error = error as? SteamError ?? .transport(error.localizedDescription)
+                if result.error == .rateLimited { rateLimited = true }
+            }
         }
-        return out
+        return result
     }
 
     // MARK: Player (key required)
@@ -163,16 +196,37 @@ public struct SteamClient: Sendable {
         items.append(URLQueryItem(name: "format", value: "json"))
         var comps = URLComponents(url: Self.api.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         comps.queryItems = items
-        let (data, status) = try await transport.get(comps.url!)
-        switch status {
-        case 200..<300: break
-        case 401 where keyed, 403 where keyed: throw SteamError.badAPIKey
-        case 401, 403: throw SteamError.privateProfile
-        case 429: throw SteamError.rateLimited
-        default: throw SteamError.http(status)
+        let url = comps.url!
+
+        // Retry only what might clear on its own: rate limits, server errors, dropped connections.
+        // Bad keys, private profiles and malformed answers come back at once.
+        var attempt = 0
+        while true {
+            let outcome: Result<(Data, Int), SteamError>
+            do { outcome = .success(try await transport.get(url)) }
+            catch { outcome = .failure(error as? SteamError ?? .transport(error.localizedDescription)) }
+
+            let failure: SteamError
+            switch outcome {
+            case .success((let data, let status)):
+                switch status {
+                case 200..<300:
+                    do { return try JSONDecoder().decode(T.self, from: data) }
+                    catch { throw SteamError.decoding(String(describing: error).prefix(120).description) }
+                case 401 where keyed, 403 where keyed: throw SteamError.badAPIKey
+                case 401, 403: throw SteamError.privateProfile
+                case 429: failure = .rateLimited
+                case 500...599: failure = .http(status)
+                default: throw SteamError.http(status)
+                }
+            case .failure(let e):
+                failure = e
+            }
+            guard attempt < retryDelays.count else { throw failure }
+            let delay = retryDelays[attempt]
+            attempt += 1
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
         }
-        do { return try JSONDecoder().decode(T.self, from: data) }
-        catch { throw SteamError.decoding(String(describing: error).prefix(120).description) }
     }
 }
 

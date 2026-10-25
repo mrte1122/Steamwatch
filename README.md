@@ -87,7 +87,13 @@ Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
 | `ISteamUser/ResolveVanityURL` | yes | custom profile URLs → SteamID64 |
 
 Default refresh is every 30 minutes: 1 wishlist call plus one store call per 50 wishlisted games,
-and 3 keyed calls when a key is set. Steam is not affiliated with this project.
+and 3 keyed calls when a key is set. Rate limits, 5xx responses and dropped connections are retried
+twice (after 2 s and 6 s). If a store batch still fails, the other batches are kept and the missing
+games keep their last known prices (the header then says "N stale"); after a rate limit the
+remaining batches are skipped and the app waits 5 minutes, doubling up to 40, before trying again.
+Any failed refresh retries at 2, 4, 8, 16 then 30 minute intervals until one succeeds, and the
+popover keeps showing the last good reading throughout. The Refresh button overrides a cooldown.
+Steam is not affiliated with this project.
 
 ## License
 
