@@ -114,7 +114,7 @@ public struct SteamClient: Sendable {
                 let input: [String: Any] = [
                     "ids": chunk.map { ["appid": $0] },
                     "context": ["language": language, "country_code": countryCode],
-                    "data_request": ["include_assets": true, "include_release": true],
+                    "data_request": ["include_assets": true, "include_release": true, "include_reviews": true, "include_platforms": true],
                 ]
                 let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
                 let r: GetItemsResponse = try await get("IStoreBrowseService/GetItems/v1/", [("input_json", json)], keyed: false)
@@ -253,12 +253,19 @@ struct GetItemsResponse: Decodable {
             let discount_pct: Int?
             let active_discounts: [Discount]?
         }
+        struct Reviews: Decodable {
+            struct Summary: Decodable { let review_count: Int?; let percent_positive: Int?; let review_score_label: String? }
+            let summary_filtered: Summary?
+        }
+        struct PlatformInfo: Decodable { let windows: Bool?; let mac: Bool?; let linux: Bool?; let steam_deck_compat_category: Int? }
         let id: Int
         let success: Int?
         let name: String?
         let is_free: Bool?
         let assets: Assets?
         let best_purchase_option: Offer?
+        let reviews: Reviews?
+        let platforms: PlatformInfo?
     }
     struct Resp: Decodable { let store_items: [Item]? }
     let response: Resp
@@ -278,6 +285,15 @@ extension StoreItem {
             price = Price(currency: currency, finalCents: final, originalCents: max(original, final),
                           discountPercent: o.discount_pct ?? 0, saleEnds: ends)
         }
-        self.init(appID: wire.id, name: name, capsuleURL: capsule, price: price, isFree: wire.is_free ?? false)
+        var reviews: ReviewSummary?
+        if let s = wire.reviews?.summary_filtered, let pct = s.percent_positive, let count = s.review_count, count > 0 {
+            reviews = ReviewSummary(percentPositive: pct, count: count, label: s.review_score_label ?? "")
+        }
+        let platforms = wire.platforms.map {
+            Platforms(windows: $0.windows ?? true, mac: $0.mac ?? false, linux: $0.linux ?? false,
+                      deck: Platforms.Deck(rawValue: $0.steam_deck_compat_category ?? 0) ?? .unknown)
+        }
+        self.init(appID: wire.id, name: name, capsuleURL: capsule, price: price, isFree: wire.is_free ?? false,
+                  reviews: reviews, platforms: platforms)
     }
 }

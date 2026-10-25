@@ -44,6 +44,9 @@ final class DealEngineTests: XCTestCase {
         XCTAssertEqual(DealEngine.filter(deals, .underTen).map(\.item.name), ["Brotato"])
         XCTAssertEqual(DealEngine.filter(deals, .all, query: "  dIvEr ").map(\.item.name), ["Dave the Diver"])
 
+        XCTAssertEqual(DealEngine.filter(deals, .mac).count, 5, "Satisfactory has no Mac build")
+        XCTAssertEqual(DealEngine.filter(deals, .deck).count, 6, "playable counts as Deck-friendly")
+
         var h = HiddenGames()
         h.hide(1); h.hide(2)
         h.prune(keeping: [2, 3])
@@ -73,6 +76,38 @@ final class DealEngineTests: XCTestCase {
         XCTAssertTrue(DealEngine.alerts(for: deals, alreadySent: sent, policy: .init(), armed: true).isEmpty)
         XCTAssertEqual(loud[0].title, "Hollow Knight: Silksong hit your target price")
         XCTAssertTrue(loud[0].body.hasPrefix("$11.99 (−40%), the lowest it's been"))
+    }
+}
+
+final class DealSortTests: XCTestCase {
+    let deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history, targets: DemoData.targets.byAppID)
+
+    func testSorts() {
+        XCTAssertEqual(DealSort.best.sorted(deals).map(\.id), deals.map(\.id))
+        XCTAssertEqual(DealSort.rating.sorted(deals).prefix(3).map(\.item.name), ["Satisfactory", "Balatro", "Outer Wilds"])
+        XCTAssertEqual(DealSort.discount.sorted(deals).first?.item.name, "Outer Wilds")
+        XCTAssertEqual(DealSort.price.sorted(deals).first?.item.name, "Brotato")
+        XCTAssertEqual(DealSort.endingSoon.sorted(deals).first?.item.name, "Dave the Diver")
+        XCTAssertEqual(DealSort.name.sorted(deals).first?.item.name, "Balatro")
+    }
+
+    func testRatingSortDiscountsTinyReviewCounts() {
+        func deal(_ id: AppID, _ pct: Int, _ count: Int) -> Deal {
+            Deal(item: StoreItem(appID: id, name: "\(id)", capsuleURL: nil, price: nil, reviews: ReviewSummary(percentPositive: pct, count: count, label: "")),
+                 price: Price(currency: "USD", finalCents: 1, originalCents: 2, discountPercent: 50), lowestSeenCents: nil, targetCents: nil, isFirstSale: false)
+        }
+        let unrated = Deal(item: StoreItem(appID: 3, name: "3", capsuleURL: nil, price: nil),
+                           price: Price(currency: "USD", finalCents: 1, originalCents: 2, discountPercent: 50), lowestSeenCents: nil, targetCents: nil, isFirstSale: false)
+        let sorted = DealSort.rating.sorted([unrated, deal(1, 100, 12), deal(2, 95, 20_000)])
+        XCTAssertEqual(sorted.map(\.id), [2, 1, 3], "95% from 20k reviews beats 100% from 12; unrated last")
+    }
+
+    func testCompactNumbers() {
+        XCTAssertEqual(Format.compact(840), "840")
+        XCTAssertEqual(Format.compact(1_200), "1.2k")
+        XCTAssertEqual(Format.compact(3_000), "3k")
+        XCTAssertEqual(Format.compact(115_457), "115k")
+        XCTAssertEqual(Format.compact(1_260_000), "1.3M")
     }
 }
 

@@ -22,8 +22,10 @@ set.
 Click a game to open its store page. Right-click it to set a target price (or "Set Target to
 $X" for the current sale price) or to hide it once you've bought it; hidden games stay out of the
 list until they leave your wishlist. Settings lists every target and hidden game. With more than
-a few deals the list gets a search field and filter chips (Targets, Lows, 50%+, Under 10) and
-scrolls past six rows.
+a few deals the list gets a search field, a sort menu (Best match, Highest rated, Biggest
+discount, Cheapest, Ending soonest, Name) and filter chips (Targets, Lows, 50%+, Under 10, Mac,
+Deck), and scrolls past six rows. "Highest rated" uses Steam's review percentage, weighted down a
+little for games with under 500 reviews; "Deck" means Verified or Playable.
 
 ## How the numbers work
 
@@ -80,7 +82,7 @@ Data lives in `~/Library/Application Support/Steamwatch/` (`price-history.json`,
 | Call | Key | Used for |
 | --- | --- | --- |
 | `IWishlistService/GetWishlist` | no | wishlist app IDs |
-| `IStoreBrowseService/GetItems` | no | names, capsule art, prices, sale end dates (50 apps per request) |
+| `IStoreBrowseService/GetItems` | no | names, capsule art, prices, sale end dates, review summary, platforms (50 apps per request) |
 | `IPlayerService/GetRecentlyPlayedGames` | yes | playtime |
 | `ISteamUser/GetPlayerSummaries` | yes | your status, friends' status and current game |
 | `ISteamUser/GetFriendList` | yes | friend IDs (public friends lists only) |

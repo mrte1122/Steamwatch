@@ -74,9 +74,19 @@ public enum DemoData {
         PlayerSummary(steamID: "3", name: "pxl", avatarURL: nil, isOnline: true, currentGame: nil, currentGameID: nil),
     ]
 
+    private static let reviews: [AppID: (Int, Int, String)] = [
+        1030300: (93, 48_200, "Very Positive"), 1145350: (95, 115_457, "Overwhelmingly Positive"), 753640: (96, 71_000, "Overwhelmingly Positive"),
+        526870: (97, 210_000, "Overwhelmingly Positive"), 1942280: (96, 58_000, "Overwhelmingly Positive"), 2379780: (97, 140_000, "Overwhelmingly Positive"),
+        1868140: (92, 64_000, "Very Positive"), 1091500: (85, 700_000, "Very Positive"), 2358720: (91, 420_000, "Very Positive"),
+        1245620: (92, 760_000, "Very Positive"), 892970: (94, 480_000, "Very Positive"),
+    ]
+    private static let noMac: Set<AppID> = [526870, 1091500, 2358720, 1245620]
+
     private static func game(_ id: AppID, _ name: String, _ original: Int, _ final: Int, _ pct: Int, ends: Int? = nil) -> StoreItem {
         StoreItem(appID: id, name: name, capsuleURL: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\(id)/capsule_231x87.jpg"),
                   price: Price(currency: "USD", finalCents: final, originalCents: original, discountPercent: pct,
-                               saleEnds: ends.map { now.addingTimeInterval(Double($0) * 86_400 + 7200) }))
+                               saleEnds: ends.map { now.addingTimeInterval(Double($0) * 86_400 + 7200) }),
+                  reviews: reviews[id].map { ReviewSummary(percentPositive: $0.0, count: $0.1, label: $0.2) },
+                  platforms: Platforms(windows: true, mac: !noMac.contains(id), linux: false, deck: id == 526870 ? .playable : .verified))
     }
 }

@@ -90,7 +90,7 @@ public enum DealEngine {
 
 /// The chip row above the deal list.
 public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
-    case all, targets, lows, halfOff, underTen
+    case all, targets, lows, halfOff, underTen, mac, deck
 
     public var id: String { rawValue }
 
@@ -101,6 +101,8 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
         case .lows: return "Lows"
         case .halfOff: return "50%+"
         case .underTen: return "Under 10"
+        case .mac: return "Mac"
+        case .deck: return "Deck"
         }
     }
 
@@ -111,6 +113,61 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
         case .lows: return d.isFirstSale || d.isNewLow
         case .halfOff: return d.price.discountPercent >= 50
         case .underTen: return d.price.finalCents < 1000
+        case .mac: return d.item.platforms?.mac ?? false
+        case .deck: return (d.item.platforms?.deck ?? .unknown).rawValue >= Platforms.Deck.playable.rawValue
         }
+    }
+}
+
+/// Orders for the deal list. `.best` is the engine's own ranking (targets, lows, then score).
+public enum DealSort: String, CaseIterable, Codable, Sendable, Identifiable {
+    case best, rating, discount, price, endingSoon, name
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .best: return "Best match"
+        case .rating: return "Highest rated"
+        case .discount: return "Biggest discount"
+        case .price: return "Cheapest"
+        case .endingSoon: return "Ending soonest"
+        case .name: return "Name"
+        }
+    }
+
+    /// Stable: ties keep the engine's order, so "Highest rated" still puts a target hit above
+    /// another game with the same score.
+    public func apply(_ deals: [Deal]) -> [Deal] {
+        guard self != .best else { return deals }
+        let indexed = deals.enumerated().map { ($0.offset, $0.element) }
+        return indexed.sorted { a, b in
+            let (ka, kb) = (key(a.1), key(b.1))
+            return ka != kb ? ka < kb : a.0 < b.0
+        }.map(\.1)
+    }
+
+    private func key(_ d: Deal) -> (Int, Int) {
+        switch self {
+        case .best: return (0, 0)
+        // Weight the percentage by review count a little so 100% from 12 reviews doesn't top the list.
+        case .rating:
+            guard let r = d.item.reviews else { return (1, 0) }
+            let confidence = min(1.0, Double(r.count) / 500)
+            return (0, -Int(Double(r.percentPositive) * (0.6 + 0.4 * confidence) * 100))
+        case .discount: return (0, -d.price.discountPercent)
+        case .price: return (0, d.price.finalCents)
+        case .endingSoon: return (d.price.saleEnds == nil ? 1 : 0, Int(d.price.saleEnds?.timeIntervalSince1970 ?? 0))
+        case .name: return (0, 0)
+        }
+    }
+}
+
+extension DealSort {
+    /// Name sort can't go through the integer key; handled here so `apply` stays simple.
+    public func sorted(_ deals: [Deal]) -> [Deal] {
+        self == .name
+            ? deals.sorted { $0.item.name.localizedCaseInsensitiveCompare($1.item.name) == .orderedAscending }
+            : apply(deals)
     }
 }

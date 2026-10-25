@@ -29,6 +29,33 @@ public struct Price: Codable, Equatable, Sendable {
     public var isOnSale: Bool { discountPercent > 0 && finalCents < originalCents }
 }
 
+/// Steam's user-review summary for a game ("Overwhelmingly Positive", 95%, 115k reviews).
+public struct ReviewSummary: Codable, Equatable, Sendable {
+    public var percentPositive: Int
+    public var count: Int
+    public var label: String
+
+    public init(percentPositive: Int, count: Int, label: String) {
+        self.percentPositive = percentPositive; self.count = count; self.label = label
+    }
+
+    /// "95% · 115k reviews"
+    public var short: String { "\(percentPositive)% · \(Format.compact(count)) reviews" }
+}
+
+/// Where a game runs. `deck` is Steam's verified/playable category for Steam Deck.
+public struct Platforms: Codable, Equatable, Sendable {
+    public enum Deck: Int, Codable, Sendable { case unknown = 0, unsupported = 1, playable = 2, verified = 3 }
+    public var windows: Bool
+    public var mac: Bool
+    public var linux: Bool
+    public var deck: Deck
+
+    public init(windows: Bool = true, mac: Bool = false, linux: Bool = false, deck: Deck = .unknown) {
+        self.windows = windows; self.mac = mac; self.linux = linux; self.deck = deck
+    }
+}
+
 /// A store listing: name, art and price. Unreleased or delisted apps have no price.
 public struct StoreItem: Codable, Equatable, Sendable, Identifiable {
     public let appID: AppID
@@ -36,9 +63,14 @@ public struct StoreItem: Codable, Equatable, Sendable, Identifiable {
     public let capsuleURL: URL?
     public let price: Price?
     public let isFree: Bool
+    /// Optional so cache files written before these fields existed still decode.
+    public var reviews: ReviewSummary?
+    public var platforms: Platforms?
 
-    public init(appID: AppID, name: String, capsuleURL: URL?, price: Price?, isFree: Bool = false) {
+    public init(appID: AppID, name: String, capsuleURL: URL?, price: Price?, isFree: Bool = false,
+                reviews: ReviewSummary? = nil, platforms: Platforms? = nil) {
         self.appID = appID; self.name = name; self.capsuleURL = capsuleURL; self.price = price; self.isFree = isFree
+        self.reviews = reviews; self.platforms = platforms
     }
 
     public var id: AppID { appID }

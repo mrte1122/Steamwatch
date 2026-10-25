@@ -20,6 +20,16 @@ public enum Format {
         return (s.hasSuffix(".0") ? String(s.dropLast(2)) : s) + "h"
     }
 
+    /// "840", "12k", "1.2M".
+    public static func compact(_ n: Int) -> String {
+        switch n {
+        case ..<1000: return "\(n)"
+        case ..<10_000: return String(format: "%.1fk", Double(n) / 1000).replacingOccurrences(of: ".0k", with: "k")
+        case ..<1_000_000: return "\(n / 1000)k"
+        default: return String(format: "%.1fM", Double(n) / 1_000_000).replacingOccurrences(of: ".0M", with: "M")
+        }
+    }
+
     /// "just now", "12 min ago", "3 h ago", "2 d ago".
     public static func relative(_ date: Date, now: Date = Date()) -> String {
         let s = max(0, Int(now.timeIntervalSince(date)))

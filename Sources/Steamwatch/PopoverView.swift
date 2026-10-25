@@ -7,6 +7,7 @@ struct PopoverView: View {
     var openSettings: () -> Void
 
     @AppStorage(SettingsKey.dealFilter) private var filterRaw = DealFilter.all.rawValue
+    @AppStorage(SettingsKey.dealSort) private var sortRaw = DealSort.best.rawValue
     @AppStorage(SettingsKey.showPlaytime) private var showPlaytime = true
     @AppStorage(SettingsKey.showFriends) private var showFriends = true
     @State private var query = ""
@@ -16,7 +17,8 @@ struct PopoverView: View {
     private let visibleRows = 6
 
     private var filter: DealFilter { DealFilter(rawValue: filterRaw) ?? .all }
-    private var shown: [Deal] { DealEngine.filter(store.deals, filter, query: query) }
+    private var sort: DealSort { DealSort(rawValue: sortRaw) ?? .best }
+    private var shown: [Deal] { sort.sorted(DealEngine.filter(store.deals, filter, query: query)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -25,7 +27,7 @@ struct PopoverView: View {
                 SetupCard(openSettings: openSettings)
             } else {
                 errorBanner
-                if store.deals.count > visibleRows || !query.isEmpty || filter != .all { filterBar }
+                if store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
                 dealsSection
                 if showPlaytime { playtimeSection }
             }
@@ -91,16 +93,32 @@ struct PopoverView: View {
     private var filterBar: some View {
         VStack(spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
-                TextField("Search deals", text: $query).textFieldStyle(.plain).font(.callout)
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                        .buttonStyle(.borderless)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
+                    TextField("Search deals", text: $query).textFieldStyle(.plain).font(.callout)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                            .buttonStyle(.borderless)
+                    }
                 }
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .card()
+                Menu {
+                    Picker("Sort", selection: $sortRaw) {
+                        ForEach(DealSort.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: {
+                    Label(sort == .best ? "Sort" : sort.title, systemImage: "arrow.up.arrow.down")
+                        .font(.caption)
+                        .foregroundStyle(sort == .best ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color(ns: Theme.readable(Theme.accent))))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Order the list")
             }
-            .padding(.horizontal, 8).padding(.vertical, 5)
-            .card()
-            HStack(spacing: 4) {
+            FlowLayout(spacing: 4) {
                 ForEach(DealFilter.allCases) { f in
                     let count = DealEngine.filter(store.deals, f).count
                     Button {
@@ -116,7 +134,6 @@ struct PopoverView: View {
                     .buttonStyle(.plain)
                     .disabled(count == 0 && f != .all)
                 }
-                Spacer()
             }
         }
     }
@@ -140,7 +157,7 @@ struct PopoverView: View {
             ScrollView(.vertical) {
                 LazyVStack(spacing: 2) {
                     ForEach(shown) { deal in
-                        DealRow(deal: deal, now: store.now, editing: editingTarget == deal.id,
+                        DealRow(deal: deal, now: store.now, sort: sort, editing: editingTarget == deal.id,
                                 beginEdit: { editingTarget = deal.id },
                                 commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil },
                                 hide: { store.hide(deal.id) })
@@ -195,6 +212,7 @@ struct DealRow: View {
 
     let deal: Deal
     let now: Date
+    var sort: DealSort = .best
     let editing: Bool
     let beginEdit: () -> Void
     let commit: (Int?) -> Void
@@ -228,7 +246,7 @@ struct DealRow: View {
             VStack(alignment: .trailing, spacing: 1) {
                 HStack(spacing: 5) {
                     Text("−\(deal.price.discountPercent)%")
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(deal.meetsTarget ? Color(ns: Theme.highlight) : Color(ns: Theme.highlight).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
                         .foregroundStyle(deal.meetsTarget ? .white : accent)
@@ -269,6 +287,11 @@ struct DealRow: View {
         else if !deal.meetsTarget, let low = deal.lowestSeenCents, low < deal.price.finalCents { parts.append("low seen \(Format.price(low, currency: cur))") }
         if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
         if let ends = deal.price.saleEnds { parts.append("ends \(Format.saleEnds(ends, now: now))") }
+        // The review score leads when the list is sorted by it, so the order is legible; otherwise
+        // it trails, where the row can afford to truncate it.
+        if let r = deal.item.reviews {
+            if sort == .rating { parts.insert(r.short, at: 0) } else { parts.append("\(r.percentPositive)% positive") }
+        }
         return parts.joined(separator: " · ")
     }
 }
@@ -345,6 +368,35 @@ struct FriendsMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+}
+
+/// Lays children out left to right, wrapping to new lines, so the chip row can grow.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: place(subviews, width: width).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (view, point) in zip(subviews, place(subviews, width: bounds.width).points) {
+            view.place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), proposal: .unspecified)
+        }
+    }
+
+    private func place(_ subviews: Subviews, width: CGFloat) -> (points: [CGPoint], height: CGFloat) {
+        var points: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (points, y + rowHeight)
     }
 }
 
