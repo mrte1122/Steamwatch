@@ -106,6 +106,13 @@ public enum DemoData {
         candidate(1, "Generic Shooter", 1999, 80, 70, 5_000, [19, 3859]),
     ]
 
+    /// A paid game that's 100% off, as the free-to-keep query would return it.
+    public static let freeGames: [StoreItem] = [
+        StoreItem(appID: 203160, name: "Tomb Raider", capsuleURL: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/203160/capsule_231x87.jpg"),
+                  price: Price(currency: "USD", finalCents: 0, originalCents: 1999, discountPercent: 100, saleEnds: now.addingTimeInterval(3 * 86_400)),
+                  reviews: ReviewSummary(percentPositive: 95, count: 110_000, label: "Overwhelmingly Positive")),
+    ]
+
     public static var suggestions: SuggestionsCache {
         let profile = TasteProfile.build(from: items, priorities: Dictionary(uniqueKeysWithValues: wishlist.map { ($0.appID, $0.priority) }))
         let ranked = SuggestionEngine.rank(suggestionCandidates, profile: profile, exclude: Set(wishlist.map(\.appID)))

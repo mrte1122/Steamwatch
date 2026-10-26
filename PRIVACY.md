@@ -1,6 +1,6 @@
 # Vaporwatch privacy policy
 
-_Last updated: October 25, 2026_
+_Last updated: October 26, 2026_
 
 Vaporwatch is a free, open-source Mac app that shows sales on your Steam wishlist. It has no
 account, no server and no analytics. Everything it knows about you stays on your Mac.
@@ -37,7 +37,10 @@ Nothing is uploaded to the developer or anyone else. There is no telemetry or cr
   it to `api.steampowered.com` only. Valve's own [privacy policy](https://store.steampowered.com/privacy_agreement/)
   applies to those requests.
 - **GitHub**: once a day, `api.github.com` is checked for a new Vaporwatch release (you can turn
-  this off in Settings → About), and updates are downloaded from GitHub Releases.
+  this off in Settings → About), and updates are downloaded from GitHub Releases. Also once a day,
+  Vaporwatch downloads Steam's seasonal sale dates from this repository
+  (`raw.githubusercontent.com/mrte1122/Vaporwatch/main/data/sale-calendar.json`). Neither request
+  includes anything about you.
 
 Links you click open in the Steam app or your browser.
 

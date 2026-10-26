@@ -33,6 +33,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.quietStart) private var quietStart = 22
     @AppStorage(SettingsKey.quietEnd) private var quietEnd = 8
     @AppStorage(SettingsKey.showSuggestions) private var showSuggestions = true
+    @AppStorage(SettingsKey.showVerdicts) private var showVerdicts = true
+    @AppStorage(SettingsKey.notifyFree) private var notifyFree = true
 
     @State private var apiKey = Keychain.load(.apiKey) ?? ""
     @State private var diagnosticsCopied = false
@@ -125,6 +127,8 @@ struct SettingsView: View {
                     Text("Your Steam friends list is private, so friends online stays empty. Steam → Edit Profile → Privacy → Friends List: Public to change that.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Toggle("Buy / Wait advice on deals", isOn: $showVerdicts)
+                    .help("Uses your price limits, the lowest price Vaporwatch has seen, and Valve's seasonal sale calendar.")
                 Toggle("“You might like” suggestions", isOn: $showSuggestions)
                     .onChange(of: showSuggestions) { _, on in if on { Task { await store.refreshSuggestions(force: true) } } }
                     .help("Discounted, well-reviewed games that share tags with your wishlist. Checked twice a day.")
@@ -151,6 +155,7 @@ struct SettingsView: View {
                     Toggle("A game hits a new low (since I started watching)", isOn: $notifyNewLow)
                     Toggle("A game goes on sale for the first time", isOn: $notifyFirstSale)
                     Toggle("Any wishlist game goes on sale", isOn: $notifyAnySale)
+                    Toggle("A paid game is free to keep", isOn: $notifyFree)
                 }
                 .disabled(!notificationsEnabled)
                 Text("Right-click a game in the popover to set its target price.").font(.caption).foregroundStyle(.secondary)

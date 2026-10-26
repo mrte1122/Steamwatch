@@ -88,10 +88,11 @@ public enum DealEngine {
     }
 
     /// Narrow a (sorted) deal list for the popover; order is preserved.
-    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "", rule: DealRule? = nil, now: Date = Date()) -> [Deal] {
+    public static func filter(_ deals: [Deal], _ filter: DealFilter, query: String = "", rule: DealRule? = nil, now: Date = Date(),
+                              buyNow: Set<AppID> = []) -> [Deal] {
         let q = query.trimmingCharacters(in: .whitespaces)
         return deals.filter { d in
-            guard filter.matches(d, rule: rule, now: now) else { return false }
+            guard filter.matches(d, rule: rule, now: now, buyNow: buyNow) else { return false }
             return q.isEmpty || d.item.name.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
     }
@@ -99,13 +100,14 @@ public enum DealEngine {
 
 /// The chip row above the deal list.
 public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
-    case all, picks, targets, endingSoon, lows, halfOff, underTen, mac, deck
+    case all, buyNow, picks, targets, endingSoon, lows, halfOff, underTen, mac, deck
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .all: return "All"
+        case .buyNow: return "Buy now"
         case .picks: return "Picks"
         case .endingSoon: return "Ending soon"
         case .targets: return "Targets"
@@ -118,9 +120,11 @@ public enum DealFilter: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 
     /// `.picks` needs the user's rule; without one it matches nothing (and the chip is hidden).
-    public func matches(_ d: Deal, rule: DealRule? = nil, now: Date = Date()) -> Bool {
+    /// `buyNow` holds the deals whose verdict is Buy (worked out by the caller with `BuyAdvisor`).
+    public func matches(_ d: Deal, rule: DealRule? = nil, now: Date = Date(), buyNow: Set<AppID> = []) -> Bool {
         switch self {
         case .all: return true
+        case .buyNow: return buyNow.contains(d.id)
         case .picks: return rule?.matches(d) ?? false
         case .endingSoon: return d.endsSoon(now: now)
         case .targets: return d.targetCents != nil

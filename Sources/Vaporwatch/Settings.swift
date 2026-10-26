@@ -80,6 +80,8 @@ enum SettingsKey {
     static let showSuggestions = "showSuggestions"
     static let dismissedSuggestions = "dismissedSuggestions" // [Int] "Not interested"
     static let ownedManual = "ownedManual"                // [Int] marked "I already own this"
+    static let notifyFree = "notifyFree"                  // paid games that are free to keep
+    static let showVerdicts = "showVerdicts"              // Buy / Wait / Fair on each deal
     static let popoverTab = "popoverTab"                  // "deals" or "forYou"
     static let lastUpdateCheck = "lastUpdateCheck"        // Date
     static let notifiedUpdateVersion = "notifiedUpdateVersion"
@@ -115,6 +117,8 @@ enum SettingsKey {
             showSuggestions: true,
             dismissedSuggestions: [Int](),
             ownedManual: [Int](),
+            notifyFree: true,
+            showVerdicts: true,
             popoverTab: "deals",
         ])
     }
@@ -143,6 +147,7 @@ enum SteamLink {
 
 enum Links {
     static let repo = URL(string: "https://github.com/mrte1122/Vaporwatch")!
+    static let saleCalendar = URL(string: "https://raw.githubusercontent.com/mrte1122/Vaporwatch/main/data/sale-calendar.json")!
     static let privacyPolicy = URL(string: "https://github.com/mrte1122/Vaporwatch/blob/main/PRIVACY.md")!
     static let tip = URL(string: "https://ko-fi.com/mrte90")!
     static let featureRequest = URL(string: "https://github.com/mrte1122/Vaporwatch/issues/new?template=feature_request.yml")!

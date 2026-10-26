@@ -53,6 +53,7 @@ final class Store: ObservableObject {
     private let saleEventFile = JSONFile<SaleEvent>(url: directory.appendingPathComponent("sale-event.json"))
     private let watchlistFile = JSONFile<Watchlist>(url: directory.appendingPathComponent("watchlist.json"))
     private let suggestionsFile = JSONFile<SuggestionsCache>(url: directory.appendingPathComponent("suggestions.json"))
+    private var calendarFile: URL { Self.directory.appendingPathComponent("sale-calendar.json") }
 
     var steamID: String { UserDefaults.standard.string(forKey: SettingsKey.steamID) ?? "" }
     var apiKey: String? { Keychain.load(.apiKey) }
@@ -79,6 +80,7 @@ final class Store: ObservableObject {
         saleEvent = saleEventFile.load()
         watchlist = watchlistFile.load() ?? Watchlist()
         suggestions = suggestionsFile.load()
+        if let data = try? Data(contentsOf: calendarFile), let cal = SaleCalendar.decode(data) { calendar = cal }
         if let cached = cacheFile.load() { apply(cached) }
         clock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
@@ -231,7 +233,11 @@ final class Store: ObservableObject {
                                             me: me, friendsOnline: friendsOnline))
         }
         scheduleRetry(after: failed)
-        if failed == nil { Task { await refreshSuggestions() } }
+        if failed == nil {
+            Task { await refreshSuggestions() }
+            Task { await refreshFreeGames() }
+            Task { await refreshCalendar() }
+        }
     }
 
     /// Keyed calls are independent of the store: a failure here only affects the playtime and
@@ -413,6 +419,65 @@ final class Store: ObservableObject {
         let rating = d.integer(forKey: SettingsKey.ruleMinRating), price = d.integer(forKey: SettingsKey.ruleMaxPrice)
         return DealRule(minDiscount: d.integer(forKey: SettingsKey.ruleMinDiscount),
                         minRating: rating > 0 ? rating : nil, maxPriceCents: price > 0 ? price : nil)
+    }
+
+    // MARK: Buy or wait
+
+    /// Valve's seasonal sales; the built-in copy, replaced by the published file when it's newer.
+    @Published private(set) var calendar = SaleCalendar.builtIn
+    private var calendarFetchedAt = Date.distantPast
+
+    var currentSale: SteamSale? { calendar.current(at: now) }
+    var nextSale: SteamSale? { calendar.next(after: now) }
+
+    func verdict(for deal: Deal) -> Verdict {
+        let record = history.record(deal.id)
+        return BuyAdvisor.verdict(for: deal, now: now, calendar: calendar, watchingSince: record?.firstSeen, lowestAt: record?.lowestAt)
+    }
+
+    /// Deals whose verdict is Buy, for the "Buy now" chip.
+    var buyNowIDs: Set<AppID> { Set(deals.filter { verdict(for: $0).kind == .buy }.map(\.id)) }
+
+    /// The sale calendar lives in the repo as data/sale-calendar.json, so new dates reach everyone
+    /// without an app update. Checked once a day; the built-in copy is the fallback.
+    func refreshCalendar() async {
+        guard !Demo.isActive, Date().timeIntervalSince(calendarFetchedAt) > 86_400 else { return }
+        calendarFetchedAt = Date()
+        guard let (data, status) = try? await URLSessionTransport().get(Links.saleCalendar), status == 200,
+              let cal = SaleCalendar.decode(data) else { return }
+        calendar = cal
+        try? data.write(to: calendarFile, options: .atomic)
+    }
+
+    // MARK: Free to keep
+
+    /// Paid games that are currently free to keep, minus ones the user owns or wishlisted already
+    /// (wishlisted ones show in Deals anyway).
+    @Published private(set) var freeGames: [StoreItem] = []
+    private var freeFetchedAt = Date.distantPast
+
+    func refreshFreeGames() async {
+        guard !Demo.isActive, Date().timeIntervalSince(freeFetchedAt) > 3 * 3600 else { return }
+        guard let found = try? await client().freeToKeepGames() else { return }
+        freeFetchedAt = Date()
+        let wished = Set(wishlist.map(\.appID))
+        freeGames = FreeToKeep.filter(found).filter { !isOwned($0.appID) && !wished.contains($0.appID) }
+        notifyFree()
+    }
+
+    private func notifyFree() {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: SettingsKey.notificationsEnabled), d.bool(forKey: SettingsKey.notifyFree) else { return }
+        var sent = Set(d.stringArray(forKey: SettingsKey.sentAlerts) ?? [])
+        for game in freeGames where !sent.contains("free-\(game.appID)") && !muted.contains(game.appID) {
+            sent.insert("free-\(game.appID)")
+            guard quietHours?.contains(Date()) != true else { continue }   // overnight: it's in the popover instead
+            var body = game.price.map { "Normally \(Format.price($0.originalCents, currency: $0.currency))" } ?? ""
+            if let r = game.reviews { body += " · \(r.percentPositive)% positive" }
+            if let ends = game.price?.saleEnds { body += " · ends \(Format.saleEnds(ends))" }
+            notifier.post(title: "Free to keep: \(game.name)", body: body, url: game.storeURL, id: "free-\(game.appID)", appID: game.appID)
+        }
+        d.set(Array(sent.sorted().suffix(1000)), forKey: SettingsKey.sentAlerts)
     }
 
     // MARK: Suggestions
@@ -651,6 +716,8 @@ final class Store: ObservableObject {
         me = DemoData.me
         friendsOnline = DemoData.friendsOnline
         suggestions = DemoData.suggestions
+        freeGames = DemoData.freeGames
+        history = DemoData.history
         lastUpdated = Date().addingTimeInterval(-12 * 60)
         lastError = nil
     }
@@ -666,6 +733,9 @@ final class Store: ObservableObject {
                      + (staleCount > 0 ? " · stale prices: \(staleCount)" : ""))
         if let until = rateLimitedUntil, until > Date() { lines.append("rate limited until: \(until)") }
         lines.append("owned: \(owned.map { "\($0.count) from Steam" } ?? "unknown (no key)") · \(ownedManual.count) marked by hand")
+        lines.append("next sale: \(nextSale.map { "\($0.name) \($0.start)" } ?? "none known") · free to keep now: \(freeGames.count)")
+        let kinds = deals.map { verdict(for: $0).kind }
+        lines.append("verdicts: buy \(kinds.filter { $0 == .buy }.count) · wait \(kinds.filter { $0 == .wait }.count) · fair \(kinds.filter { $0 == .fair }.count)")
         if let s = suggestions { lines.append("suggestions: \(visibleSuggestions.count) shown of \(s.suggestions.count), fetched \(s.fetchedAt)") }
         if let e = saleEvent { lines.append("sale event: since \(e.started), +\(e.extra(deals)) deals" + (e.ends.map { ", most end \($0)" } ?? "")) }
         for d in deals { lines.append("  \(d.item.name): \(Format.price(d.price.finalCents, currency: d.price.currency)) −\(d.price.discountPercent)%\(d.meetsTarget ? " TARGET" : "")\(d.isNewLow ? " LOW" : "")\(d.isFirstSale ? " FIRST" : "")") }

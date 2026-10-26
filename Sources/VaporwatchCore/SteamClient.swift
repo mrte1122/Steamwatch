@@ -161,6 +161,21 @@ public struct SteamClient: Sendable {
         return (r.response.store_items ?? []).compactMap { StoreItem(wire: $0) }
     }
 
+    /// Paid games currently 100% off (free to keep). Steam ignores a minimum discount of 100, so ask
+    /// for 99 and let `FreeToKeep.filter` keep only the genuinely free ones. No key needed.
+    public func freeToKeepGames(count: Int = 50) async throws -> [StoreItem] {
+        let input: [String: Any] = [
+            "query": ["start": 0, "count": count, "sort": 11,
+                      "filters": ["released_only": true, "type_filters": ["include_games": true],
+                                  "price_filters": ["min_discount_percent": 99]]],
+            "context": ["language": language, "country_code": countryCode],
+            "data_request": ["include_assets": true, "include_reviews": true, "include_platforms": true],
+        ]
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
+        let r: GetItemsResponse = try await get("IStoreQueryService/Query/v1/", [("input_json", json)], keyed: false)
+        return (r.response.store_items ?? []).compactMap { StoreItem(wire: $0) }
+    }
+
     /// Tag names by ID, for explaining suggestions ("Roguelike, Deckbuilding").
     public func tagNames() async throws -> [Int: String] {
         struct R: Decodable { struct T: Decodable { let tagid: Int; let name: String }; struct Resp: Decodable { let tags: [T]? }; let response: Resp }

@@ -380,6 +380,85 @@ final class SuggestionTests: XCTestCase {
     }
 }
 
+final class BuyAdviceTests: XCTestCase {
+    override func setUp() { super.setUp(); _ = pinLocale }
+
+    let utc = TimeZone(identifier: "UTC")!
+    func day(_ s: String, hour: Int = 12) -> Date {
+        var c = Calendar(identifier: .gregorian); c.timeZone = utc
+        let p = s.split(separator: "-").map { Int($0)! }
+        return c.date(from: DateComponents(year: p[0], month: p[1], day: p[2], hour: hour))!
+    }
+    func deal(final: Int = 1500, original: Int = 3000, ends: Date? = nil, low: Int? = nil, target: Int? = nil) -> Deal {
+        Deal(item: StoreItem(appID: 1, name: "G", capsuleURL: nil, price: nil),
+             price: Price(currency: "USD", finalCents: final, originalCents: original,
+                          discountPercent: (original - final) * 100 / original, saleEnds: ends),
+             lowestSeenCents: low, targetCents: target, isFirstSale: false)
+    }
+    func v(_ d: Deal, now: String, since: String? = nil, lowAt: String? = nil, ever: Int? = nil) -> Verdict {
+        BuyAdvisor.verdict(for: d, now: day(now), watchingSince: since.map { day($0) }, lowestAt: lowAt.map { day($0) },
+                           historicalLowCents: ever, timeZone: utc)
+    }
+
+    func testCalendarUsesValvesPublishedDatesAt10Pacific() {
+        let winter = SaleCalendar.builtIn.next(after: day("2026-10-26"))!
+        XCTAssertEqual(winter.name, "Steam Winter Sale")
+        XCTAssertEqual(winter.start, day("2026-12-17", hour: 18), "10:00 PST is 18:00 UTC")
+        XCTAssertEqual(SaleCalendar.builtIn.current(at: day("2026-12-20"))?.name, "Steam Winter Sale")
+        XCTAssertNil(SaleCalendar.builtIn.current(at: day("2026-11-20")))
+        let json = #"{"sales":[{"name":"Steam Autumn Sale","start":"2027-09-30","end":"2027-10-07"},{"name":"bad","start":"2027-01-02","end":"2027-01-01"}]}"#
+        let cal = SaleCalendar.decode(Data(json.utf8))
+        XCTAssertEqual(cal?.sales.map(\.name), ["Steam Autumn Sale"], "an end before its start is dropped")
+        XCTAssertNil(SaleCalendar.decode(Data("nope".utf8)))
+    }
+
+    func testVerdicts() {
+        XCTAssertEqual(v(deal(target: 2000), now: "2026-10-26"), Verdict(kind: .buy, reason: "at your limit"))
+        // Two days of history and the Winter Sale 52 days out: no basis to say wait.
+        XCTAssertEqual(v(deal(ends: day("2026-10-30"), low: 1500), now: "2026-10-26", since: "2026-10-24"),
+                       Verdict(kind: .fair, reason: "−50%"))
+        // 16 days before the Winter Sale, and this discount ends first.
+        XCTAssertEqual(v(deal(ends: day("2026-12-05")), now: "2026-12-01"), Verdict(kind: .wait, reason: "Winter Sale in 17d"))
+        // Same, but this discount runs into the sale: it probably is the sale price.
+        XCTAssertEqual(v(deal(ends: day("2026-12-20")), now: "2026-12-01").kind, .fair)
+        // A month of history.
+        XCTAssertEqual(v(deal(final: 1000, low: 1000), now: "2026-10-26", since: "2026-09-26"),
+                       Verdict(kind: .buy, reason: "lowest since Sep 26"))
+        XCTAssertEqual(v(deal(final: 1500, low: 1000), now: "2026-10-26", since: "2026-09-26", lowAt: "2026-10-10"),
+                       Verdict(kind: .wait, reason: "was $10.00 (Oct 10)"))
+        XCTAssertEqual(v(deal(final: 1100, low: 1000), now: "2026-10-26", since: "2026-09-26"), Verdict(kind: .fair, reason: "near its low"))
+        // During the Winter Sale.
+        XCTAssertEqual(v(deal(final: 1200, low: 1000), now: "2026-12-20", since: "2026-09-26"),
+                       Verdict(kind: .fair, reason: "Winter Sale price; low $10.00"))
+        XCTAssertEqual(v(deal(final: 1200), now: "2026-12-20"), Verdict(kind: .buy, reason: "Winter Sale"))
+        // A longer history source, when one is plugged in.
+        XCTAssertEqual(v(deal(final: 900, low: 1000), now: "2026-10-26", ever: 900), Verdict(kind: .buy, reason: "lowest ever"))
+    }
+
+    func testNewLowNeedsHistory() {
+        var d = deal(final: 900, low: 1000)
+        XCTAssertTrue(d.isNewLow)
+        XCTAssertEqual(v(d, now: "2026-10-26", since: "2026-09-26"), Verdict(kind: .buy, reason: "new low"))
+        d = deal(final: 900, ends: nil, low: 1000)
+        XCTAssertNotEqual(v(d, now: "2026-10-26", since: "2026-10-25").reason, "new low", "a day of watching isn't a low")
+    }
+
+    func testFreeToKeepAndBuyNowFilter() {
+        func item(_ id: AppID, final: Int, original: Int, pct: Int, rating: Int = 90, reviews: Int = 5000) -> StoreItem {
+            StoreItem(appID: id, name: "\(id)", capsuleURL: nil,
+                      price: Price(currency: "USD", finalCents: final, originalCents: original, discountPercent: pct),
+                      reviews: ReviewSummary(percentPositive: rating, count: reviews, label: ""))
+        }
+        let items = [item(1, final: 0, original: 1999, pct: 100), item(2, final: 19, original: 1999, pct: 99),
+                     item(3, final: 0, original: 1999, pct: 100, rating: 40), item(4, final: 0, original: 999, pct: 100, rating: 95)]
+        XCTAssertEqual(FreeToKeep.filter(items).map(\.appID), [4, 1], "only truly free, decently rated; best first")
+
+        let deals = DealEngine.deals(wishlist: DemoData.wishlist, items: DemoData.items, history: DemoData.history, targets: DemoData.targets.byAppID)
+        XCTAssertEqual(DealEngine.filter(deals, .buyNow, buyNow: [1145350]).map(\.item.name), ["Hades II"])
+        XCTAssertTrue(DealEngine.filter(deals, .buyNow).isEmpty)
+    }
+}
+
 final class LocalSteamTests: XCTestCase {
     let sample = """
     "users"

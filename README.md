@@ -62,6 +62,17 @@ It checks twice a day. Steam only shares your game library through a Web API key
 everything you own is skipped automatically; the For You tab has a field to paste one. Turn
 suggestions off in Settings → General.
 
+**Buy or wait.** Each deal starts with a verdict: **Buy** (at your limit, a new low, or the lowest
+Vaporwatch has seen), **Wait** (a Steam seasonal sale is under 30 days away and this discount ends
+before it, or it's clearly above a price it has had), or **Fair**. It uses only Steam-side signals:
+your limits, Vaporwatch's own price history (trusted after 14 days of watching) and Valve's published
+sale calendar, kept in [`data/sale-calendar.json`](data/sale-calendar.json) and fetched daily so new
+dates don't need an app update. A **Buy now** chip lists the Buys, and a banner counts down the last
+two weeks before a seasonal sale. Turn verdicts off in Settings → General.
+
+**Free to keep.** When a well-reviewed paid game is 100% off on Steam, it shows at the top of Deals
+with a **Get** button, and you get one notification (Settings → Notifications).
+
 Right-click a deal for **Notify Me At** (25/50/75% off or the lowest seen, in one click),
 **Mute Notifications** (it stays in the list but never alerts) or **Hide (Bought It)**. Deal
 notifications carry the same Hide and Mute buttons. Settings → Notifications → **Quiet hours**
@@ -170,7 +181,7 @@ Data lives in `~/Library/Application Support/Vaporwatch/` (`price-history.json`,
 | --- | --- | --- |
 | `IWishlistService/GetWishlist` | no | wishlist app IDs |
 | `store.steampowered.com/api/storesearch` | no | the + panel's store search |
-| `IStoreQueryService/Query` | no | discounted games by tag, for suggestions (twice a day) |
+| `IStoreQueryService/Query` | no | discounted games by tag, for suggestions (twice a day); 99%+ off games for free-to-keep (every 3 hours) |
 | `IStoreService/GetTagList` | no | tag names for suggestion reasons |
 | `IPlayerService/GetOwnedGames` | yes | skip owned games in suggestions |
 | `IStoreBrowseService/GetItems` | no | names, capsule art, prices, sale end dates, review summary, platforms (50 apps per request) |

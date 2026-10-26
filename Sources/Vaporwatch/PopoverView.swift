@@ -29,18 +29,21 @@ struct PopoverView: View {
 
     private var filter: DealFilter { DealFilter(rawValue: filterRaw) ?? .all }
     private var sort: DealSort { DealSort(rawValue: sortRaw) ?? .best }
-    private var shown: [Deal] { sort.sorted(DealEngine.filter(store.deals, filter, query: query, rule: store.rule)) }
+    @AppStorage(SettingsKey.showVerdicts) private var showVerdicts = true
+    private var buyNow: Set<AppID> { showVerdicts ? store.buyNowIDs : [] }
+    private var shown: [Deal] { sort.sorted(DealEngine.filter(store.deals, filter, query: query, rule: store.rule, buyNow: buyNow)) }
     /// Chips with nothing in them are left out (All and the selected one always stay); Picks needs a rule.
     private var chips: [DealFilter] {
         DealFilter.allCases.filter { f in
             if f == .all || f == filter { return true }
             if f == .picks, store.rule == nil { return false }
-            return !DealEngine.filter(store.deals, f, rule: store.rule).isEmpty
+            if f == .buyNow, !showVerdicts { return false }
+            return !DealEngine.filter(store.deals, f, rule: store.rule, buyNow: buyNow).isEmpty
         }
     }
 
     /// Fixed so the popover never resizes (and macOS never slides it sideways) when content changes.
-    static let height: CGFloat = 640
+    static let height: CGFloat = 660
 
     private var onForYou: Bool { showSuggestions && tabRaw == "forYou" }
 
@@ -62,6 +65,7 @@ struct PopoverView: View {
                 } else {
                     errorBanner
                     saleBanner
+                    if !store.freeGames.isEmpty { FreeToKeepCard(games: store.freeGames, now: store.now) }
                     if searchShown || store.deals.count > visibleRows || !query.isEmpty || filter != .all || sort != .best { filterBar }
                     dealsSection.frame(maxHeight: .infinity, alignment: .top)
                     if showPlaytime { playtimeSection }
@@ -258,7 +262,8 @@ struct PopoverView: View {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(Color(ns: Theme.readable(Theme.highlight)))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Big Steam sale").font(.callout.weight(.semibold))
+                    // Valve's name when its calendar says a seasonal sale is on; inferred otherwise.
+                    Text(store.currentSale?.name ?? "Big Steam sale").font(.callout.weight(.semibold))
                     Text("+\(event.extra(store.deals)) games discounted since it began")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -269,6 +274,17 @@ struct PopoverView: View {
             }
             .padding(8)
             .card(tint: Color(ns: Theme.highlight))
+        } else if let next = store.nextSale, next.start.timeIntervalSince(store.now) < 14 * 86_400 {
+            let days = Int(ceil(next.start.timeIntervalSince(store.now) / 86_400))
+            HStack(spacing: 8) {
+                Image(systemName: "calendar").foregroundStyle(.secondary)
+                Text("\(next.name) starts \(next.start.formatted(.dateTime.month(.abbreviated).day()))").font(.caption.weight(.medium))
+                Spacer()
+                Text(days <= 1 ? "tomorrow" : "in \(days) days").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .card()
+            .help("Deals ending before then are marked Wait unless they're at a low or your limit.")
         }
     }
 
@@ -319,7 +335,7 @@ struct PopoverView: View {
             }
             FlowLayout(spacing: 4) {
                 ForEach(chips) { f in
-                    let count = DealEngine.filter(store.deals, f, rule: store.rule).count
+                    let count = DealEngine.filter(store.deals, f, rule: store.rule, buyNow: buyNow).count
                     Button {
                         filterRaw = f.rawValue
                     } label: {
@@ -357,7 +373,7 @@ struct PopoverView: View {
             ScrollView(.vertical) {
                 LazyVStack(spacing: 2) {
                     ForEach(shown) { deal in
-                        DealRow(deal: deal, now: store.now, sort: sort, selected: selection == deal.id, watched: store.watchlist.contains(deal.id), picked: store.rule?.matches(deal) ?? false, editing: editingTarget == deal.id,
+                        DealRow(deal: deal, now: store.now, sort: sort, verdict: showVerdicts ? store.verdict(for: deal) : nil, selected: selection == deal.id, watched: store.watchlist.contains(deal.id), picked: store.rule?.matches(deal) ?? false, editing: editingTarget == deal.id,
                                 beginEdit: { editingTarget = deal.id },
                                 commit: { cents in store.setTarget(cents, for: deal.id); editingTarget = nil },
                                 hide: { store.hide(deal.id) },
@@ -417,6 +433,8 @@ struct DealRow: View {
     let deal: Deal
     let now: Date
     var sort: DealSort = .best
+    /// Buy / Wait / Fair, shown first on the detail line.
+    var verdict: Verdict?
     /// Highlighted by the keyboard.
     var selected = false
     /// Added through store search rather than the Steam wishlist.
@@ -449,7 +467,7 @@ struct DealRow: View {
                         if deal.targetCents != nil { Button("Clear") { commit(nil) }.controlSize(.mini) }
                     }
                 } else {
-                    Text(detail).font(.caption).lineLimit(1)
+                    detailText.font(.caption).lineLimit(1)
                         .foregroundStyle(deal.meetsTarget ? AnyShapeStyle(accent)
                                          : deal.endsSoon(now: now) ? AnyShapeStyle(Color(ns: Theme.readable(.systemOrange))) : AnyShapeStyle(.secondary))
                 }
@@ -504,14 +522,30 @@ struct DealRow: View {
         .help("Click to open in the Steam store. Right-click for targets or to hide.")
     }
 
+    /// The verdict leads in its own color; a target hit already says "buy", so it's left off there.
+    private var detailText: Text {
+        guard let v = verdict, !deal.meetsTarget else { return Text(detail) }
+        let color: Color
+        switch v.kind {
+        case .buy: color = Color(ns: Theme.readable(Theme.highlight))
+        case .wait: color = Color(ns: Theme.readable(.systemOrange))
+        case .fair: color = .secondary
+        }
+        let head = Text(v.label).fontWeight(.semibold).foregroundColor(color) + Text(" · \(v.reason)")
+        return detail.isEmpty ? head : head + Text(" · \(detail)")
+    }
+
     private var detail: String {
         var parts: [String] = []
         let cur = deal.price.currency
         if deal.meetsTarget, let t = deal.targetCents { parts.append("Under \(Format.price(t, currency: cur)) target") }
         else if let t = deal.targetCents { parts.append("target \(Format.price(t, currency: cur))") }
         if deal.isFirstSale { parts.append("first sale ever") }
-        else if deal.isNewLow { parts.append("new low") }
-        else if !deal.meetsTarget, let low = deal.lowestSeenCents, low < deal.price.finalCents { parts.append("low seen \(Format.price(low, currency: cur))") }
+        // With a verdict showing, lows are already part of its reason.
+        else if verdict == nil || deal.meetsTarget {
+            if deal.isNewLow { parts.append("new low") }
+            else if !deal.meetsTarget, let low = deal.lowestSeenCents, low < deal.price.finalCents { parts.append("low seen \(Format.price(low, currency: cur))") }
+        }
         if picked, !deal.meetsTarget { parts.insert("your rule", at: 0) }
         if watched { parts.append("watching") }
         else if deal.priority > 0, deal.priority <= 30 { parts.append("#\(deal.priority) on wishlist") }
@@ -571,8 +605,8 @@ struct PlaytimeCard: View {
                     ForEach(Array(recent)) { g in
                         VStack(alignment: .leading, spacing: 2) {
                             GameArt(appID: g.appID)
-                            Text(g.name).font(.caption2).lineLimit(1)
-                            Text(Format.hours(g.minutesTwoWeeks)).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                            (Text(g.name) + Text(" · \(Format.hours(g.minutesTwoWeeks))").foregroundColor(.secondary))
+                                .font(.caption2).lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -591,7 +625,7 @@ struct PlaytimeCard: View {
                 // A fixed floor keeps quiet days looking quiet instead of stretching to fill.
                 .chartYScale(domain: 0...peak)
                 .chartXAxis(.hidden).chartYAxis(.hidden)
-                .frame(height: 28)
+                .frame(height: 20)
             } else if store.recentGames.isEmpty {
                 Text("Nothing played in the last two weeks.").font(.caption2).foregroundStyle(.secondary)
             } else {
@@ -614,7 +648,7 @@ struct GameArt: View {
             RoundedRectangle(cornerRadius: 4).fill(.quaternary)
                 .overlay(Image(systemName: "gamecontroller").font(.caption2).foregroundStyle(.tertiary))
         }
-        .frame(height: 36)
+        .frame(height: 26)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
@@ -639,6 +673,43 @@ struct FriendsMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+}
+
+/// Paid games that are 100% off right now: claim them in Steam and they're yours to keep.
+struct FreeToKeepCard: View {
+    let games: [StoreItem]
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(games.prefix(2)) { g in
+                HStack(spacing: 8) {
+                    CapsuleArt(url: g.capsuleURL)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Label(g.name, systemImage: "gift").font(.callout.weight(.medium)).lineLimit(1)
+                        Text(detail(g)).font(.caption).foregroundStyle(Color(ns: Theme.readable(Theme.highlight))).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Button("Get") { SteamLink.open(g.storeURL) }.controlSize(.small).buttonStyle(.borderedProminent)
+                        .help("Open in Steam and add it to your library")
+                }
+            }
+            if games.count > 2 {
+                Text("+\(games.count - 2) more free to keep").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(8)
+        .card(tint: Color(ns: Theme.highlight))
+    }
+
+    private func detail(_ g: StoreItem) -> String {
+        var parts: [String] = []
+        parts.append("Free to keep")
+        if let p = g.price { parts.append("normally \(Format.price(p.originalCents, currency: p.currency))") }
+        if let r = g.reviews { parts.append("\(r.percentPositive)%") }
+        if let ends = g.price?.saleEnds { parts.append("ends \(Format.saleEnds(ends, now: now))") }
+        return parts.joined(separator: " · ")
     }
 }
 
