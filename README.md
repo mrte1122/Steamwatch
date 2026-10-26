@@ -132,7 +132,7 @@ build/Vaporwatch.app/Contents/MacOS/Vaporwatch --search "hades"   # the store se
 build/Vaporwatch.app/Contents/MacOS/Vaporwatch --suggest           # fetch and print suggestions
 build/Vaporwatch.app/Contents/MacOS/Vaporwatch --check-key         # HTTP status of each keyed call (never prints the key)
 build/Vaporwatch.app/Contents/MacOS/Vaporwatch --snapshot docs --demo --art   # README screenshots (--art loads real capsule art)
-swift scripts/make-social-preview.swift .                                   # docs/social-preview.png for the repo card
+swift scripts/make-social-preview.swift .                                   # a fallback repo card (the real one, docs/social-preview.png, is designed in Canva)
 ```
 
 Launch with `--demo` to see the UI with sample data and no network access.

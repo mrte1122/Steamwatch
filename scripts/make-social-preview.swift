@@ -1,4 +1,5 @@
-// Renders docs/social-preview.png (1280×640), the card GitHub shows when the repo link is shared.
+// Renders a programmatic fallback card (1280×640) to docs/social-preview-generated.png. The card
+// actually used, docs/social-preview.png, is designed in Canva; this keeps a quick way to rebuild one.
 // Usage: swift scripts/make-social-preview.swift   (then upload it in the repo's Settings → Social preview)
 import AppKit
 
@@ -57,6 +58,6 @@ text("Free and open source  ·  Notarized  ·  github.com/mrte1122/Vaporwatch", 
      at: NSPoint(x: safe.minX, y: safe.minY + 26), width: textWidth)
 
 NSGraphicsContext.restoreGraphicsState()
-let out = root.appendingPathComponent("docs/social-preview.png")
+let out = root.appendingPathComponent("docs/social-preview-generated.png")
 try! rep.representation(using: .png, properties: [:])!.write(to: out)
 print("Wrote \(out.path)")
